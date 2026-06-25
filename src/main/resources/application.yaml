@@ -1,3 +1,9 @@
 spring:
   application:
     name: navalrivals
+
+
+api:
+  security:
+    token:
+      secret: security-token-api-secret-naval-rivals
