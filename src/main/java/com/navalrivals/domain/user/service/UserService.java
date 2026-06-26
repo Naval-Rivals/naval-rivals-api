@@ -2,20 +2,23 @@ package com.navalrivals.domain.user.service;
 
 import com.navalrivals.domain.user.dto.LoginUserRequest;
 import com.navalrivals.domain.user.dto.RegisterUserRequest;
+import com.navalrivals.domain.user.dto.UpdateNicknameRequest;
 import com.navalrivals.domain.user.dto.UserResponse;
 import com.navalrivals.domain.user.entity.User;
 import com.navalrivals.domain.user.repository.UserRepository;
 import com.navalrivals.infra.exception.exceptions.BadCredencialsException;
+import com.navalrivals.infra.exception.exceptions.NotFoundException;
 import com.navalrivals.infra.exception.exceptions.UserAlreadyExistsException;
 import com.navalrivals.infra.security.dto.AuthResponse;
 import com.navalrivals.infra.security.service.TokenService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -60,6 +63,20 @@ public class UserService {
         } catch (Exception e){
             throw new BadCredencialsException("E-mail ou senha incorretos");
         }
+    }
+
+    public UserResponse getById(UUID id){
+        var user = userRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("Usuário não encontrado"));
+        return new UserResponse(user);
+    }
+
+    @Transactional
+    public UserResponse changeNickname(UpdateNicknameRequest data, User user){
+        var managedUser = userRepository.findById(user.getId())
+                .orElseThrow();
+        managedUser.setNickname(data.nickname());
+        return new UserResponse(managedUser);
     }
 
 }
