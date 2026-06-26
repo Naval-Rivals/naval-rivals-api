@@ -1,5 +1,7 @@
 package com.navalrivals.domain.user.dto;
 
+import com.navalrivals.domain.user.entity.User;
+
 import java.util.UUID;
 
 public record UserResponse(
@@ -7,4 +9,7 @@ public record UserResponse(
         String nickname,
         String email
 ) {
+    public UserResponse(User user) {
+        this(user.getId(), user.getNickname(), user.getEmail());
+    }
 }

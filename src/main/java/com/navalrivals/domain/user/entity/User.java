@@ -1,5 +1,6 @@
 package com.navalrivals.domain.user.entity;
 
+import com.navalrivals.domain.user.dto.RegisterUserRequest;
 import jakarta.persistence.*;
 import lombok.*;
 import org.springframework.security.core.GrantedAuthority;
@@ -31,6 +32,12 @@ public class User implements UserDetails {
 
     @Column(nullable = false)
     private String password;
+
+    public User(RegisterUserRequest data, String encryptedPassword) {
+        this.nickname = data.nickname();
+        this.email = data.email();
+        this.password = encryptedPassword;
+    }
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
