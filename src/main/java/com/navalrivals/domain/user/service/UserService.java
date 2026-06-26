@@ -24,6 +24,7 @@ public class UserService {
     private final UserRepository userRepository;
     private final TokenService tokenService;
     private final AuthenticationManager authenticationManager;
+    private final BCryptPasswordEncoder encoder;
 
     @Transactional
     public AuthResponse register(RegisterUserRequest data){
@@ -32,7 +33,7 @@ public class UserService {
             throw new UserAlreadyExistsException("Usuário já cadastrado");
         }
 
-        var encryptedPassword = new BCryptPasswordEncoder().encode(data.password());
+        var encryptedPassword = encoder.encode(data.password());
 
         var user = new User(data, encryptedPassword);
 
@@ -78,7 +79,6 @@ public class UserService {
 
     @Transactional
     public void changePassword(UpdatePasswordRequest data, User user){
-        BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
 
         if (!encoder.matches(data.currentPassword(), user.getPassword())){
             throw new BadCredencialsException("Senha atual incorreta");
