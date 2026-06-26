@@ -1,6 +1,7 @@
 package com.navalrivals.domain.user.controller;
 
 import com.navalrivals.domain.user.dto.UpdateNicknameRequest;
+import com.navalrivals.domain.user.dto.UpdatePasswordRequest;
 import com.navalrivals.domain.user.dto.UserResponse;
 import com.navalrivals.domain.user.entity.User;
 import com.navalrivals.domain.user.service.UserService;
@@ -37,5 +38,14 @@ public class UserController {
     ){
         var response = userService.changeNickname(requestBody, user);
         return ResponseEntity.ok(response);
+    }
+
+    @PatchMapping("/me/password")
+    public ResponseEntity<Void> changePassword(
+            @RequestBody @Valid UpdatePasswordRequest requestBody,
+            @AuthenticationPrincipal User user
+    ){
+        userService.changePassword(requestBody, user);
+        return ResponseEntity.noContent().build();
     }
 }

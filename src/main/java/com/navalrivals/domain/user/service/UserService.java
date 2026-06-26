@@ -1,9 +1,6 @@
 package com.navalrivals.domain.user.service;
 
-import com.navalrivals.domain.user.dto.LoginUserRequest;
-import com.navalrivals.domain.user.dto.RegisterUserRequest;
-import com.navalrivals.domain.user.dto.UpdateNicknameRequest;
-import com.navalrivals.domain.user.dto.UserResponse;
+import com.navalrivals.domain.user.dto.*;
 import com.navalrivals.domain.user.entity.User;
 import com.navalrivals.domain.user.repository.UserRepository;
 import com.navalrivals.infra.exception.exceptions.BadCredencialsException;
@@ -77,6 +74,22 @@ public class UserService {
                 .orElseThrow();
         managedUser.setNickname(data.nickname());
         return new UserResponse(managedUser);
+    }
+
+    @Transactional
+    public void changePassword(UpdatePasswordRequest data, User user){
+        BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
+
+        if (!encoder.matches(data.currentPassword(), user.getPassword())){
+            throw new BadCredencialsException("Senha atual incorreta");
+        }
+
+        if (encoder.matches(data.newPassword(), user.getPassword())){
+            throw new BadCredencialsException("Nova senha não pode ser igual a atual");
+        }
+
+        var newEncryptedPassword = encoder.encode(data.newPassword());
+        user.setPassword(newEncryptedPassword);
     }
 
 }
