@@ -1,6 +1,7 @@
 package com.navalrivals.infra.security.filter;
 
 import com.navalrivals.domain.user.repository.UserRepository;
+import com.navalrivals.infra.exception.exceptions.NotFoundException;
 import com.navalrivals.infra.security.service.TokenService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -29,7 +30,8 @@ public class SecurityFilter extends OncePerRequestFilter {
 
             if(token != null){
                 var subject = tokenService.validateToken(token);
-                var user = userRepository.findByEmail(subject);
+                var user = userRepository.findByEmail(subject)
+                        .orElseThrow(() -> new NotFoundException("Usuário não encontrado"));
                 var authorization = new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
 
                 SecurityContextHolder.getContext().setAuthentication(authorization);
