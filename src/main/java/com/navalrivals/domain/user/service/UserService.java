@@ -1,14 +1,17 @@
 package com.navalrivals.domain.user.service;
 
+import com.navalrivals.domain.user.dto.LoginUserRequest;
 import com.navalrivals.domain.user.dto.RegisterUserRequest;
 import com.navalrivals.domain.user.dto.UserResponse;
 import com.navalrivals.domain.user.entity.User;
 import com.navalrivals.domain.user.repository.UserRepository;
+import com.navalrivals.infra.exception.exceptions.BadCredencialsException;
 import com.navalrivals.infra.exception.exceptions.UserAlreadyExistsException;
 import com.navalrivals.infra.security.dto.AuthResponse;
 import com.navalrivals.infra.security.service.TokenService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -43,4 +46,20 @@ public class UserService {
 
         return new AuthResponse(tokenJwt, new UserResponse(user));
     }
+
+    public AuthResponse login(LoginUserRequest data){
+        try {
+            var authenticationToken = new UsernamePasswordAuthenticationToken(data.email(), data.password());
+            var authentication = authenticationManager.authenticate(authenticationToken);
+
+            var user = (User) authentication.getPrincipal();
+            var tokenJwt = tokenService.generateToken(user);
+
+            return new AuthResponse(tokenJwt, new UserResponse(user));
+
+        } catch (Exception e){
+            throw new BadCredencialsException("E-mail ou senha incorretos");
+        }
+    }
+
 }

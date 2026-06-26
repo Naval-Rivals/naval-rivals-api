@@ -1,5 +1,6 @@
 package com.navalrivals.domain.user.controller;
 
+import com.navalrivals.domain.user.dto.LoginUserRequest;
 import com.navalrivals.domain.user.dto.RegisterUserRequest;
 import com.navalrivals.domain.user.service.UserService;
 import com.navalrivals.infra.security.dto.AuthResponse;
@@ -27,6 +28,12 @@ public class AuthController {
         var response = userService.register(requestBody);
         var uri = uriBuilder.path("users/{id}").buildAndExpand(response.user().id()).toUri();
         return ResponseEntity.created(uri).body(response);
+    }
+
+    @PostMapping("/login")
+    public ResponseEntity<AuthResponse> login(@RequestBody @Valid LoginUserRequest requestBody){
+        var response = userService.login(requestBody);
+        return ResponseEntity.ok(response);
     }
 
 
