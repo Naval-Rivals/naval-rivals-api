@@ -1,9 +1,21 @@
 spring:
   application:
     name: navalrivals
-
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+  flyway:
+    enabled: true
 
 api:
   security:
     token:
       secret: security-token-api-secret-naval-rivals
+
+server:
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
