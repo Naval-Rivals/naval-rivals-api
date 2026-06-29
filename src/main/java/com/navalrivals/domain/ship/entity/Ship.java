@@ -1,15 +1,21 @@
 package com.navalrivals.domain.ship.entity;
 
 import com.navalrivals.domain.position.entity.Position;
-import com.navalrivals.domain.ship.enums.ShipSize;
+import com.navalrivals.domain.ship.enums.ShipType;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.util.List;
-import java.util.UUID;
 
+@AllArgsConstructor
+@NoArgsConstructor
+@Getter
+@Setter
 public class Ship {
 
-    private UUID id;
+    private ShipType type;
     private List<Position> positions;
     private boolean sunken;
-    private ShipSize size;
 }
