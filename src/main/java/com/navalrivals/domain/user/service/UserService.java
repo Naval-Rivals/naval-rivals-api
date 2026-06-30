@@ -90,6 +90,8 @@ public class UserService {
 
         var newEncryptedPassword = encoder.encode(data.newPassword());
         user.setPassword(newEncryptedPassword);
+
+        userRepository.save(user);
     }
 
 }
