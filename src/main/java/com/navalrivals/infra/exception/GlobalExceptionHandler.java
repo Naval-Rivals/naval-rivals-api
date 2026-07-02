@@ -65,4 +65,10 @@ public class GlobalExceptionHandler {
                 errors.stream().map(ErrorValidationResponse::new).collect(Collectors.toList()));
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
+
+    @ExceptionHandler(PasswordNotConfirmationException.class)
+    public ResponseEntity<ErrorResponse> handlePasswordNotConfirmationException(PasswordNotConfirmationException e){
+        var response = new ErrorResponse(e.getMessage(), HttpStatus.BAD_REQUEST.value(), null);
+        return ResponseEntity.badRequest().body(response);
+    }
 }

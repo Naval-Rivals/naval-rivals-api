@@ -5,6 +5,7 @@ import com.navalrivals.domain.user.entity.User;
 import com.navalrivals.domain.user.repository.UserRepository;
 import com.navalrivals.infra.exception.exceptions.BadCredencialsException;
 import com.navalrivals.infra.exception.exceptions.NotFoundException;
+import com.navalrivals.infra.exception.exceptions.PasswordNotConfirmationException;
 import com.navalrivals.infra.exception.exceptions.UserAlreadyExistsException;
 import com.navalrivals.infra.security.dto.AuthResponse;
 import com.navalrivals.infra.security.service.TokenService;
@@ -33,6 +34,10 @@ public class UserService {
             throw new UserAlreadyExistsException("Usuário já cadastrado");
         }
 
+        if (!data.password().equals(data.passwordConfirmation())){
+            throw new PasswordNotConfirmationException("As senhas não coincidem");
+        }
+
         var encryptedPassword = encoder.encode(data.password());
 
         var user = new User(data, encryptedPassword);
@@ -45,7 +50,7 @@ public class UserService {
         var authentication = authenticationManager.authenticate(authenticationToken);
         var tokenJwt = tokenService.generateToken((User) authentication.getPrincipal());
 
-        return new AuthResponse(tokenJwt, new UserResponse(user));
+        return new AuthResponse(tokenJwt, user);
     }
 
     public AuthResponse login(LoginUserRequest data){
@@ -56,7 +61,7 @@ public class UserService {
             var user = (User) authentication.getPrincipal();
             var tokenJwt = tokenService.generateToken(user);
 
-            return new AuthResponse(tokenJwt, new UserResponse(user));
+            return new AuthResponse(tokenJwt, user);
 
         } catch (Exception e){
             throw new BadCredencialsException("E-mail ou senha incorretos");
