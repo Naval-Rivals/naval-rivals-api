@@ -71,4 +71,16 @@ public class GlobalExceptionHandler {
         var response = new ErrorResponse(e.getMessage(), HttpStatus.BAD_REQUEST.value(), null);
         return ResponseEntity.badRequest().body(response);
     }
+
+    @ExceptionHandler(RoomFullException.class)
+    public ResponseEntity<ErrorResponse> handleRoomFullException(RoomFullException e){
+        var response = new ErrorResponse(e.getMessage(), HttpStatus.CONFLICT.value(), null);
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+    }
+
+    @ExceptionHandler(PlayerWithoutPermissionException.class)
+    public ResponseEntity<ErrorResponse> handlePlayerWithoutPermissionException(PlayerWithoutPermissionException e){
+        var response = new ErrorResponse(e.getMessage(), HttpStatus.BAD_REQUEST.value(), null);
+        return ResponseEntity.badRequest().body(response);
+    }
 }
