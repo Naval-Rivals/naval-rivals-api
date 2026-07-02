@@ -1,5 +1,6 @@
 package com.navalrivals.domain.user.entity;
 
+import com.navalrivals.domain.stats.entity.Stats;
 import com.navalrivals.domain.user.dto.RegisterUserRequest;
 import jakarta.persistence.*;
 import lombok.*;
@@ -17,7 +18,7 @@ import java.util.UUID;
 @AllArgsConstructor
 @Getter
 @Setter
-@EqualsAndHashCode
+@EqualsAndHashCode(of = "id")
 public class User implements UserDetails {
 
     @Id
@@ -32,6 +33,9 @@ public class User implements UserDetails {
 
     @Column(nullable = false)
     private String password;
+
+    @OneToOne(mappedBy = "user", cascade = CascadeType.ALL)
+    private Stats stats;
 
     public User(RegisterUserRequest data, String encryptedPassword) {
         this.nickname = data.nickname();

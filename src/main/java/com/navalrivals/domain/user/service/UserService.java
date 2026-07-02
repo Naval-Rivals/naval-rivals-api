@@ -38,6 +38,10 @@ public class UserService {
             throw new PasswordNotConfirmationException("As senhas não coincidem");
         }
 
+        if (userRepository.existsByNickname(data.nickname())){
+            throw new UserAlreadyExistsException("Já existe um usuário com esse apelido");
+        }
+
         var encryptedPassword = encoder.encode(data.password());
 
         var user = new User(data, encryptedPassword);
@@ -76,6 +80,11 @@ public class UserService {
 
     @Transactional
     public UserResponse changeNickname(UpdateNicknameRequest data, User user){
+
+        if (userRepository.existsByNickname(data.nickname())){
+            throw new UserAlreadyExistsException("Já existe um usuário com esse apelido");
+        }
+
         var managedUser = userRepository.findById(user.getId())
                 .orElseThrow();
         managedUser.setNickname(data.nickname());
@@ -91,6 +100,10 @@ public class UserService {
 
         if (encoder.matches(data.newPassword(), user.getPassword())){
             throw new BadCredencialsException("Nova senha não pode ser igual a atual");
+        }
+
+        if (!data.newPassword().equals(data.passwordConfirmation())){
+            throw new PasswordNotConfirmationException("As senhas não coincidem");
         }
 
         var newEncryptedPassword = encoder.encode(data.newPassword());

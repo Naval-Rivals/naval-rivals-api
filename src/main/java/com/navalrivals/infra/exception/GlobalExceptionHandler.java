@@ -25,8 +25,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(BadCredencialsException.class)
     public ResponseEntity<ErrorResponse> handleBadCredencialsException(BadCredencialsException e){
-        var response = new ErrorResponse(e.getMessage(), HttpStatus.BAD_REQUEST.value(), null);
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+        var response = new ErrorResponse(e.getMessage(), HttpStatus.UNAUTHORIZED.value(), null);
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
     }
 
     @ExceptionHandler(SecurityException.class)
