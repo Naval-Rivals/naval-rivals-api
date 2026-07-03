@@ -1,5 +1,6 @@
 package com.navalrivals.domain.user.service;
 
+import com.navalrivals.domain.stats.entity.Stats;
 import com.navalrivals.domain.user.dto.*;
 import com.navalrivals.domain.user.entity.User;
 import com.navalrivals.domain.user.repository.UserRepository;
@@ -45,6 +46,9 @@ public class UserService {
         var encryptedPassword = encoder.encode(data.password());
 
         var user = new User(data, encryptedPassword);
+
+        var stats = new Stats(user);
+        user.setStats(stats);
 
         userRepository.save(user);
 

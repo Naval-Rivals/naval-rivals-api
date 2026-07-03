@@ -2,8 +2,10 @@ package com.navalrivals.domain.game.service;
 
 import com.navalrivals.domain.board.entity.Board;
 import com.navalrivals.domain.game.dto.GameResultResponse;
+import com.navalrivals.domain.game.dto.GameStateResponse;
 import com.navalrivals.domain.game.entity.Game;
 import com.navalrivals.domain.game.entity.GameResult;
+import com.navalrivals.domain.stats.entity.Stats;
 import com.navalrivals.domain.game.enums.GameStatus;
 import com.navalrivals.domain.game.repository.GameResultRepository;
 import com.navalrivals.domain.game.storage.GameStorage;
@@ -33,6 +35,8 @@ public class GameService {
     private final GameResultRepository gameResultRepository;
     private final RoomRepository roomRepository;
     private final UserRepository userRepository;
+    private final GameWebSocketService gameWebSocketService;
+    private final TurnTimerService turnTimerService;
 
     public Game createGame(User player) {
         var game = new Game(player);
@@ -55,6 +59,13 @@ public class GameService {
         }
 
         game.placeShips(player.getId(), ships);
+
+        if (game.getStatus() == GameStatus.IN_PROGRESS){
+            gameWebSocketService.notifyGameStarted(gameId, player.getId(), game.getCurrentTurn());
+            turnTimerService.startTimer(gameId);
+        }else{
+            gameWebSocketService.notifyOpponentReady(gameId, player.getId());
+        }
         return game;
     }
 
@@ -132,6 +143,16 @@ public class GameService {
         result.setFinishedAt(Instant.now());
 
         gameResultRepository.save(result);
+
+        // Update stats
+        Stats winnerStats = winner.getStats();
+        if (winnerStats != null) {
+            winnerStats.registerVictory();
+        }
+        Stats loserStats = loser.getStats();
+        if (loserStats != null) {
+            loserStats.registerDefeat();
+        }
     }
 
     private UUID getLoserIdFrom(Game game, UUID winnerId) {
@@ -139,5 +160,45 @@ public class GameService {
             return game.getPlayer2().getPlayerId();
         }
         return game.getPlayer1().getPlayerId();
+    }
+
+    public GameStateResponse getGameState(UUID gameId, User player) {
+        var game = storage.findById(gameId)
+                .orElseThrow(() -> new NotFoundException("Partida não encontrada"));
+        if (!game.hasPlayer(player.getId())) {
+            throw new PlayerWithoutPermissionException("Jogador não pertence a essa partida");
+        }
+
+        var myBoard = game.getBoardOf(player.getId());
+        var opponentBoard = game.getOpponentBoardOf(player.getId());
+
+        var myShips = myBoard.getShips().stream()
+                .map(GameStateResponse.ShipInfo::new)
+                .toList();
+        var myShotsReceived = myBoard.getShots().stream()
+                .map(GameStateResponse.ShotInfo::new)
+                .toList();
+        var myShotsMade = opponentBoard != null
+                ? opponentBoard.getShots().stream().map(GameStateResponse.ShotInfo::new).toList()
+                : List.<GameStateResponse.ShotInfo>of();
+
+        return new GameStateResponse(
+                game.getId(),
+                game.getStatus(),
+                game.getCurrentTurn(),
+                player.getId(),
+                myShips,
+                myShotsReceived,
+                myShotsMade
+        );
+    }
+
+    public Game findById(UUID gameId){
+        return storage.findById(gameId)
+                .orElseThrow(() -> new NotFoundException("Partida não encontrada"));
+    }
+
+    public void removeGame(UUID gameId) {
+        storage.remove(gameId);
     }
 }

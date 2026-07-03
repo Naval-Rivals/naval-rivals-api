@@ -12,6 +12,7 @@ public record UserResponse(
         StatsResponse stats
 ) {
     public UserResponse(User user) {
-        this(user.getId(), user.getNickname(), user.getEmail(), new StatsResponse(user.getStats()));
+        this(user.getId(), user.getNickname(), user.getEmail(),
+             user.getStats() != null ? new StatsResponse(user.getStats()) : null);
     }
 }

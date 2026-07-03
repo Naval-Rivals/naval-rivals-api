@@ -2,6 +2,7 @@ package com.navalrivals.domain.board.entity;
 
 import com.navalrivals.domain.position.entity.Position;
 import com.navalrivals.domain.ship.entity.Ship;
+import com.navalrivals.domain.ship.validator.ShipPlacementValidator;
 import com.navalrivals.domain.shot.entity.Shot;
 import com.navalrivals.domain.user.entity.User;
 import lombok.Getter;
@@ -26,6 +27,7 @@ public class Board {
     }
 
     public void setShip(List<Ship> ships){
+        ShipPlacementValidator.validate(ships);
         this.ships = ships;
         this.ready = true;
     }

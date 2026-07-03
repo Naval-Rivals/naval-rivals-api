@@ -1,6 +1,7 @@
 package com.navalrivals.domain.game.controller;
 
 import com.navalrivals.domain.game.dto.GameResultResponse;
+import com.navalrivals.domain.game.dto.GameStateResponse;
 import com.navalrivals.domain.game.dto.PlaceShipRequest;
 import com.navalrivals.domain.game.service.GameService;
 import com.navalrivals.domain.ship.dto.ShipRequest;
@@ -41,6 +42,15 @@ public class GameController {
             @PathVariable UUID gameId
     ) {
         var response = gameService.getGameResult(gameId);
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/{gameId}/state")
+    public ResponseEntity<GameStateResponse> getState(
+            @PathVariable UUID gameId,
+            @AuthenticationPrincipal User user
+    ) {
+        var response = gameService.getGameState(gameId, user);
         return ResponseEntity.ok(response);
     }
 

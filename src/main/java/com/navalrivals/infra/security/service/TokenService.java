@@ -9,8 +9,12 @@ import com.navalrivals.infra.exception.exceptions.TokenJwtException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
+
 @Service
 public class TokenService {
+
+    private static final long TOKEN_EXPIRATION_SECONDS = 86400; // 24 horas
 
     @Value("${api.security.token.secret}")
     private String secret;
@@ -22,6 +26,7 @@ public class TokenService {
             return JWT.create()
                     .withIssuer("naval-rivals-api")
                     .withSubject(user.getEmail())
+                    .withExpiresAt(Instant.now().plusSeconds(TOKEN_EXPIRATION_SECONDS))
                     .sign(algorithm);
         }catch (JWTCreationException e){
             throw new TokenJwtException("Erro ao criar o Token JWT");

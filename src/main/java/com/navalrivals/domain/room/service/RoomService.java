@@ -1,5 +1,6 @@
 package com.navalrivals.domain.room.service;
 
+import com.navalrivals.domain.game.service.GameService;
 import com.navalrivals.domain.room.dto.JoinRoomRequest;
 import com.navalrivals.domain.room.dto.RoomResponse;
 import com.navalrivals.domain.room.entity.Room;
@@ -21,6 +22,8 @@ import java.util.UUID;
 public class RoomService {
 
     private final RoomRepository roomRepository;
+    private final RoomWebSocketService roomWebSocketService;
+    private final GameService gameService;
 
     private static final String CODE_CHARACTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     private static final int CODE_LENGTH = 4;
@@ -51,6 +54,13 @@ public class RoomService {
         room.setOpponent(player);
         room.setStatus(RoomStatus.FULL);
 
+        var game = gameService.createGame(room.getHost());
+        gameService.joinGame(game.getId(), player);
+        room.setGameId(game.getId());
+
+        roomWebSocketService.notifyPlayerJoined(room.getId(), player.getId(), player.getNickname());
+        roomWebSocketService.notifyRoomReady(room.getId(), player.getId(), player.getNickname(), game.getId());
+
         return new RoomResponse(room);
     }
 
@@ -69,9 +79,20 @@ public class RoomService {
             throw new PlayerWithoutPermissionException("Jogador não pertence a essa sala");
         }
 
+        roomWebSocketService.notifyPlayerLeft(room.getId(), user.getId(), user.getNickname());
+
         if (room.isHost(user.getId())) {
+            // Se a sala tem um jogo ativo, limpa da memória
+            if (room.getGameId() != null) {
+                gameService.removeGame(room.getGameId());
+            }
             roomRepository.delete(room);
         } else {
+            // Se a sala tem um jogo ativo, limpa da memória
+            if (room.getGameId() != null) {
+                gameService.removeGame(room.getGameId());
+                room.setGameId(null);
+            }
             room.setOpponent(null);
             room.setStatus(RoomStatus.WAITING);
         }

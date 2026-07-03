@@ -71,7 +71,7 @@ public class Game {
         this.currentTurn = randomizeTurn();
     }
 
-    public void placeShips(UUID playerId, List<Ship> ships) {
+    public synchronized void placeShips(UUID playerId, List<Ship> ships) {
         if (this.status != GameStatus.PLACING_SHIPS) {
             throw new MatchStatusException("Partida não está na fase de posicionamento");
         }
@@ -89,7 +89,7 @@ public class Game {
         }
     }
 
-    public Shot shoot(UUID shooterId, Position position) {
+    public synchronized Shot shoot(UUID shooterId, Position position) {
         if (this.status != GameStatus.IN_PROGRESS) {
             throw new MatchStatusException("Partida não está em andamento");
         }
@@ -116,6 +116,14 @@ public class Game {
         }
 
         return shot;
+    }
+
+    public synchronized void forceSwapTurn() {
+        if (currentTurn.equals(player1.getPlayerId())) {
+            this.currentTurn = player2.getPlayerId();
+        } else {
+            this.currentTurn = player1.getPlayerId();
+        }
     }
 
     public void finish(UUID winnerId) {

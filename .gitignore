@@ -35,3 +35,4 @@ build/
 ### Outros ###
 
 .env
+docs-internal/

@@ -83,4 +83,16 @@ public class GlobalExceptionHandler {
         var response = new ErrorResponse(e.getMessage(), HttpStatus.BAD_REQUEST.value(), null);
         return ResponseEntity.badRequest().body(response);
     }
+
+    @ExceptionHandler(InvalidCellException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidCellException(InvalidCellException e) {
+        var response = new ErrorResponse(e.getMessage(), HttpStatus.BAD_REQUEST.value(), null);
+        return ResponseEntity.badRequest().body(response);
+    }
+
+    @ExceptionHandler(MatchStatusException.class)
+    public ResponseEntity<ErrorResponse> handleMatchStatusException(MatchStatusException e) {
+        var response = new ErrorResponse(e.getMessage(), HttpStatus.CONFLICT.value(), null);
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+    }
 }

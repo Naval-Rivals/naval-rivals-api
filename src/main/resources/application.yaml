@@ -11,7 +11,7 @@ spring:
 api:
   security:
     token:
-      secret: security-token-api-secret-naval-rivals
+      secret: ${JWT_SECRET:default-dev-secret-naval-rivals}
 
 server:
   servlet:
