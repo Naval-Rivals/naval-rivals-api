@@ -12,6 +12,7 @@ public record RoomResponse(
         RoomStatus status,
         PlayerInfo host,
         PlayerInfo opponent,
+        UUID gameId,
         Instant createdAt
 ) {
     public RoomResponse(Room room) {
@@ -23,6 +24,7 @@ public record RoomResponse(
                 room.getOpponent() != null
                         ? new PlayerInfo(room.getOpponent().getId(), room.getOpponent().getNickname())
                         : null,
+                room.getGameId(),
                 room.getCreatedAt()
         );
     }
