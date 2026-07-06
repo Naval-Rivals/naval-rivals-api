@@ -364,6 +364,7 @@ Creates a new room. The authenticated user becomes the host.
     "nickname": "PlayerOne"
   },
   "opponent": null,
+  "gameId": null,
   "createdAt": "2026-07-03T14:00:00Z"
 }
 ```
@@ -372,6 +373,7 @@ Creates a new room. The authenticated user becomes the host.
 - Room code is auto-generated with format `NR-XXXX` (4 alphanumeric chars)
 - Room starts with status `WAITING`
 - The creator is the `host`
+- `gameId` is `null` when the room is still waiting for an opponent
 
 ---
 
@@ -405,6 +407,7 @@ Join an existing room by code.
     "id": "770e8400-e29b-41d4-a716-446655440000",
     "nickname": "PlayerTwo"
   },
+  "gameId": "660e8400-e29b-41d4-a716-446655440000",
   "createdAt": "2026-07-03T14:00:00Z"
 }
 ```
@@ -418,7 +421,7 @@ Join an existing room by code.
   2. A Game is automatically created (in-memory)
   3. Both players join the game (status becomes `PLACING_SHIPS`)
   4. WebSocket events `PLAYER_JOINED` and `ROOM_READY` are published
-  5. The response includes the `gameId` implicitly (via the room's `gameId`)
+  5. The `gameId` is included in the HTTP response (so the opponent has it immediately without needing WebSocket)
 
 **Errors:**
 - 404: "Sala não encontrada"
@@ -447,9 +450,15 @@ Join an existing room by code.
     "id": "770e8400-e29b-41d4-a716-446655440000",
     "nickname": "PlayerTwo"
   },
+  "gameId": "660e8400-e29b-41d4-a716-446655440000",
   "createdAt": "2026-07-03T14:00:00Z"
 }
 ```
+
+**Notes:**
+- `gameId` will be `null` if the room is still in `WAITING` status
+- `gameId` is present when the room is `FULL` and a game has been created
+- Useful for reconnection scenarios (client can retrieve the gameId if lost)
 
 **Errors:**
 - 404: "Sala não encontrada"
@@ -948,7 +957,7 @@ Published after each attack. Both players receive this.
 
 #### TURN_CHANGE
 
-Published after each attack or timeout. Informs who plays next.
+Published after each attack (miss) or timeout. Informs who plays next. Note: if the attack was a hit, `nextTurn` will be the same player who just attacked (they get another turn).
 
 ```json
 {
@@ -963,7 +972,7 @@ Published after each attack or timeout. Informs who plays next.
 
 | Payload Field | Type | Description |
 |---------------|------|-------------|
-| nextTurn | UUID | Player who should attack next |
+| nextTurn | UUID | Player who should attack next (can be the same player if they hit) |
 | turnTimeout | int | Seconds for this turn (always 60) |
 
 **Frontend action:** Reset and start the countdown timer. Enable/disable attack controls based on whose turn it is.
@@ -1037,13 +1046,13 @@ Published when the game ends.
 | loserId | UUID | Loser's user ID |
 | reason | String | `"ALL_SHIPS_SUNK"` or `"OPPONENT_DISCONNECTED"` |
 
-**Frontend action:** Show victory/defeat screen. Call `GET /games/{gameId}/result` for detailed stats.
+**Frontend action:** Show victory/defeat screen. Call `GET /games/{gameId}/result` for detailed stats (only available if the game was in `IN_PROGRESS` — not available for disconnects during `PLACING_SHIPS`).
 
 ---
 
 #### OPPONENT_DISCONNECTED
 
-Published when the opponent's WebSocket connection drops during an active game.
+Published when the opponent's WebSocket connection drops during `PLACING_SHIPS` or `IN_PROGRESS` phase.
 
 ```json
 {
@@ -1062,6 +1071,10 @@ Published when the opponent's WebSocket connection drops during an active game.
 | reconnectTimeout | int | Seconds to reconnect (30) |
 
 **Frontend action:** Show a "waiting for opponent" overlay with a 30-second countdown. The turn timer is paused on the server.
+
+**If the opponent does NOT reconnect within 30 seconds:**
+- During `IN_PROGRESS`: `GAME_OVER` is published with reason `OPPONENT_DISCONNECTED` (W.O. victory). Game result is persisted.
+- During `PLACING_SHIPS`: `GAME_OVER` is published with reason `OPPONENT_DISCONNECTED`, then `PLAYER_LEFT` is published on `/topic/room/{roomId}`. The room is reset to `WAITING` status (opponent removed, gameId cleared). No game result is persisted.
 
 ---
 
@@ -1130,7 +1143,9 @@ This is a secondary topic that also receives attack results in a flat format (fo
 - Must be your turn
 - Game must be in `IN_PROGRESS` status
 - Cannot attack the same cell twice
-- After a successful attack, the server publishes multiple events: ATTACK_RESULT, then either SHIP_SUNK + GAME_OVER (if game ends) or TURN_CHANGE (if game continues)
+- **If the shot HITS:** the same player keeps the turn (plays again)
+- **If the shot MISSES:** the turn passes to the opponent
+- After a successful attack, the server publishes multiple events: ATTACK_RESULT, then either SHIP_SUNK + GAME_OVER (if game ends) or TURN_CHANGE (if turn changes or same player continues)
 
 ---
 
@@ -1214,15 +1229,21 @@ If a reconnection is detected (player had previously disconnected), the server a
 │   1. ATTACK_RESULT {attackerId, cell, hit}                       │
 │   2. (if sunk) SHIP_SUNK {ownerId, shipType, positions}          │
 │   3a. (if game over) GAME_OVER {winnerId, loserId, reason}       │
-│   3b. (if continues) TURN_CHANGE {nextTurn, turnTimeout}         │
+│   3b. (if miss) TURN_CHANGE {nextTurn=opponent, turnTimeout}     │
+│   3c. (if hit, not game over) TURN_CHANGE {nextTurn=same player} │
+│                                                                  │
+│ TURN RULE: If you HIT, you get another turn. Miss = turn passes. │
 │                                                                  │
 │ If player doesn't attack within 60s:                             │
 │   Server publishes: TURN_TIMEOUT → TURN_CHANGE                   │
 │                                                                  │
-│ If player disconnects:                                           │
+│ If player disconnects (during PLACING_SHIPS or IN_PROGRESS):     │
 │   Server publishes: OPPONENT_DISCONNECTED (30s to reconnect)     │
 │   If reconnects: OPPONENT_RECONNECTED (timer resumes)            │
-│   If timeout: GAME_OVER (reason: OPPONENT_DISCONNECTED)          │
+│   If timeout during IN_PROGRESS:                                 │
+│     GAME_OVER (reason: OPPONENT_DISCONNECTED, W.O.)              │
+│   If timeout during PLACING_SHIPS:                               │
+│     GAME_OVER + PLAYER_LEFT on room topic (room reset to WAITING)│
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -1242,7 +1263,7 @@ If a reconnection is detected (player had previously disconnected), the server a
 
 ### Reconnection Flow
 
-If the client loses connection during a game:
+If the client loses connection during a game (`PLACING_SHIPS` or `IN_PROGRESS`):
 
 1. Server detects disconnect via `SessionDisconnectEvent`
 2. Server pauses the turn timer
@@ -1255,6 +1276,10 @@ If the client loses connection during a game:
    - Server publishes `OPPONENT_RECONNECTED`
    - Server resumes the turn timer with remaining time
 5. Call `GET /games/{gameId}/state` to rebuild the full board state
+
+**If reconnection fails (30s timeout expires):**
+- **During `IN_PROGRESS`:** Game ends with W.O. victory for the connected player. Result is persisted to database.
+- **During `PLACING_SHIPS`:** Game is cancelled (not persisted). `PLAYER_LEFT` is emitted on the room topic. The room is reset to `WAITING` status so the host can wait for a new opponent.
 
 ### Game Cleanup
 

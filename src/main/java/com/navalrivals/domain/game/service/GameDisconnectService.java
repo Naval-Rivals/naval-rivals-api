@@ -3,6 +3,11 @@ package com.navalrivals.domain.game.service;
 import com.navalrivals.domain.game.entity.Game;
 import com.navalrivals.domain.game.enums.GameStatus;
 import com.navalrivals.domain.game.storage.GameStorage;
+import com.navalrivals.domain.room.enums.RoomStatus;
+import com.navalrivals.domain.room.repository.RoomRepository;
+import com.navalrivals.domain.room.service.RoomWebSocketService;
+import com.navalrivals.domain.user.entity.User;
+import com.navalrivals.domain.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import jakarta.annotation.PreDestroy;
@@ -32,6 +37,9 @@ public class GameDisconnectService {
     private final GameStorage gameStorage;
     private final TurnTimerService turnTimerService;
     private final GameService gameService;
+    private final RoomRepository roomRepository;
+    private final RoomWebSocketService roomWebSocketService;
+    private final UserRepository userRepository;
 
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
 
@@ -119,7 +127,8 @@ public class GameDisconnectService {
 
     /**
      * Chamado quando o timeout de 30s expira sem reconexão.
-     * O jogador que ficou conectado vence por W.O.
+     * - Se IN_PROGRESS: o jogador que ficou conectado vence por W.O.
+     * - Se PLACING_SHIPS: cancela o jogo, reseta a room e emite PLAYER_LEFT.
      */
     private void handleReconnectTimeout(UUID gameId, UUID disconnectedPlayerId) {
         reconnectTimers.remove(disconnectedPlayerId);
@@ -131,34 +140,92 @@ public class GameDisconnectService {
             Game game = gameOpt.get();
             if (game.getStatus() == GameStatus.FINISHED) return;
 
-            // Determina o vencedor (o que ficou online)
-            UUID winnerId;
-            if (game.getPlayer1().getPlayerId().equals(disconnectedPlayerId)) {
-                winnerId = game.getPlayer2().getPlayerId();
+            if (game.getStatus() == GameStatus.PLACING_SHIPS) {
+                handlePlacingShipsDisconnect(gameId, disconnectedPlayerId);
             } else {
-                winnerId = game.getPlayer1().getPlayerId();
+                handleInProgressDisconnect(game, gameId, disconnectedPlayerId);
             }
-
-            // Finaliza o jogo
-            game.finish(winnerId);
-
-            // Publica GAME_OVER
-            eventPublisher.publishGameOver(gameId, winnerId, disconnectedPlayerId, "OPPONENT_DISCONNECTED");
-
-            // Persiste resultado
-            gameService.persistGameResult(game);
-
-            // Limpa timer e game da memória
-            turnTimerService.cancelTimer(gameId);
-            gameService.removeGame(gameId);
-
-            log.info("Jogo {} encerrado por desconexão. Vencedor: {}", gameId, winnerId);
         } catch (Exception e) {
             log.error("Erro ao processar timeout de reconexão do jogo {}: {}", gameId, e.getMessage(), e);
             // Garante limpeza mesmo em caso de erro
             turnTimerService.cancelTimer(gameId);
             gameService.removeGame(gameId);
         }
+    }
+
+    /**
+     * Trata desconexão durante PLACING_SHIPS:
+     * - Emite GAME_OVER com reason OPPONENT_DISCONNECTED no tópico do game
+     * - Emite PLAYER_LEFT no tópico da room
+     * - Reseta a room (remove opponent, volta WAITING, limpa gameId)
+     * - Remove o game da memória
+     */
+    private void handlePlacingShipsDisconnect(UUID gameId, UUID disconnectedPlayerId) {
+        // Determina vencedor (quem ficou online)
+        var game = gameStorage.findById(gameId).orElse(null);
+        if (game == null) return;
+
+        UUID winnerId;
+        if (game.getPlayer1().getPlayerId().equals(disconnectedPlayerId)) {
+            winnerId = game.getPlayer2().getPlayerId();
+        } else {
+            winnerId = game.getPlayer1().getPlayerId();
+        }
+
+        // Publica GAME_OVER no tópico do game
+        eventPublisher.publishGameOver(gameId, winnerId, disconnectedPlayerId, "OPPONENT_DISCONNECTED");
+
+        // Busca a room associada e emite PLAYER_LEFT + reseta
+        roomRepository.findByGameId(gameId).ifPresent(room -> {
+            String nickname = userRepository.findById(disconnectedPlayerId)
+                    .map(User::getNickname)
+                    .orElse("Unknown");
+
+            roomWebSocketService.notifyPlayerLeft(room.getId(), disconnectedPlayerId, nickname);
+
+            // Reseta a room para WAITING
+            room.setOpponent(null);
+            room.setGameId(null);
+            room.setStatus(RoomStatus.WAITING);
+            roomRepository.save(room);
+        });
+
+        // Remove o game da memória
+        gameService.removeGame(gameId);
+
+        log.info("Jogo {} cancelado durante PLACING_SHIPS por desconexão do jogador {}", gameId, disconnectedPlayerId);
+    }
+
+    /**
+     * Trata desconexão durante IN_PROGRESS:
+     * - Finaliza o jogo com vitória por W.O.
+     * - Persiste resultado
+     * - Publica GAME_OVER
+     * - Remove o game da memória
+     */
+    private void handleInProgressDisconnect(Game game, UUID gameId, UUID disconnectedPlayerId) {
+        // Determina o vencedor (o que ficou online)
+        UUID winnerId;
+        if (game.getPlayer1().getPlayerId().equals(disconnectedPlayerId)) {
+            winnerId = game.getPlayer2().getPlayerId();
+        } else {
+            winnerId = game.getPlayer1().getPlayerId();
+        }
+
+        // Finaliza o jogo
+        game.finish(winnerId);
+
+        // Publica GAME_OVER
+        eventPublisher.publishGameOver(gameId, winnerId, disconnectedPlayerId, "OPPONENT_DISCONNECTED");
+
+        // Persiste resultado
+        gameService.persistGameResult(game);
+
+        // Limpa timer e game da memória
+        turnTimerService.cancelTimer(gameId);
+        gameService.removeGame(gameId);
+
+        log.info("Jogo {} encerrado por desconexão. Vencedor: {}", gameId, winnerId);
     }
 
     private record PlayerSession(UUID gameId, UUID playerId) {}

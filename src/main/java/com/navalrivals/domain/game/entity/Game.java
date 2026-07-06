@@ -111,7 +111,7 @@ public class Game {
 
         if (opponentBoard.allShipsSunk()) {
             finish(shooterId);
-        } else {
+        } else if (!shot.isHit()) {
             switchTurn();
         }
 
