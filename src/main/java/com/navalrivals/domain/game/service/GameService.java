@@ -69,7 +69,7 @@ public class GameService {
         return game;
     }
 
-    public Shot shoot(UUID gameId, User player, Position positionShot) {
+    public Shot shoot(UUID gameId, User player, Position positionShot, String attackType) {
         var game = storage.findById(gameId)
                 .orElseThrow(() -> new NotFoundException("Partida não encontrada"));
 
@@ -77,7 +77,7 @@ public class GameService {
             throw new PlayerWithoutPermissionException("Jogador não pertence a essa partida");
         }
 
-        Shot shot = game.shoot(player.getId(), positionShot);
+        Shot shot = game.shoot(player.getId(), positionShot, attackType);
 
         if (game.getStatus() == GameStatus.FINISHED) {
             persistGameResult(game);
@@ -189,7 +189,8 @@ public class GameService {
                 player.getId(),
                 myShips,
                 myShotsReceived,
-                myShotsMade
+                myShotsMade,
+                myBoard.isTorpedoAvailable()
         );
     }
 

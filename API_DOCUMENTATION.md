@@ -18,6 +18,7 @@
    - [Placement Events](#placement-events)
    - [Game Events](#game-events)
 8. [Complete Game Flow](#complete-game-flow)
+9. [Torpedo Mechanic](#torpedo-mechanic)
 
 ---
 
@@ -630,7 +631,8 @@ Get the current game state from the player's perspective.
   "myShotsMade": [
     {"position": {"row": 3, "col": 4}, "hit": true},
     {"position": {"row": 7, "col": 2}, "hit": false}
-  ]
+  ],
+  "torpedoAvailable": true
 }
 ```
 
@@ -639,6 +641,7 @@ Get the current game state from the player's perspective.
 - `myShips` = the player's own ships with positions and sunk status
 - `myShotsReceived` = shots the opponent made on the player's board
 - `myShotsMade` = shots the player made on the opponent's board
+- `torpedoAvailable` = whether the player can still use their torpedo (each player has 1 per match)
 - This endpoint is useful for reconnection (rebuild the entire board state)
 
 **Errors:**
@@ -942,7 +945,8 @@ Published after each attack. Both players receive this.
   "payload": {
     "attackerId": "550e8400-e29b-41d4-a716-446655440000",
     "cell": "C4",
-    "hit": true
+    "hit": true,
+    "attackType": "NORMAL"
   }
 }
 ```
@@ -952,6 +956,7 @@ Published after each attack. Both players receive this.
 | attackerId | UUID | Who made the attack |
 | cell | String | Cell notation (e.g., "A1", "J10") |
 | hit | boolean | Whether the shot hit a ship |
+| attackType | String | Type of attack: `"NORMAL"` or `"TORPEDO"` |
 
 ---
 
@@ -1112,7 +1117,8 @@ This is a secondary topic that also receives attack results in a flat format (fo
   "shipType": "DESTROYER",
   "gameOver": false,
   "winnerId": null,
-  "nextTurn": "770e8400-e29b-41d4-a716-446655440000"
+  "nextTurn": "770e8400-e29b-41d4-a716-446655440000",
+  "attackType": "NORMAL"
 }
 ```
 
@@ -1126,13 +1132,15 @@ This is a secondary topic that also receives attack results in a flat format (fo
 
 ```json
 {
-  "cell": "C4"
+  "cell": "C4",
+  "type": "NORMAL"
 }
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
 | cell | String | Target cell in notation format (letter A-J + number 1-10) |
+| type | String | (Optional) Attack type: `"NORMAL"` (default) or `"TORPEDO"` |
 
 **Cell notation:**
 - Row: A=row 0, B=row 1, ..., J=row 9
@@ -1146,6 +1154,20 @@ This is a secondary topic that also receives attack results in a flat format (fo
 - **If the shot HITS:** the same player keeps the turn (plays again)
 - **If the shot MISSES:** the turn passes to the opponent
 - After a successful attack, the server publishes multiple events: ATTACK_RESULT, then either SHIP_SUNK + GAME_OVER (if game ends) or TURN_CHANGE (if turn changes or same player continues)
+
+**Torpedo rules:**
+- Each player has **1 torpedo per match**
+- Send `"type": "TORPEDO"` to fire a torpedo
+- If the torpedo **hits** any position of a ship, the **entire ship is sunk instantly** (regardless of ship size)
+- If the torpedo **misses**, it behaves like a normal shot (registers miss, turn passes to opponent)
+- If the torpedo has already been used, the server returns an error: `"Torpedo já foi utilizado nesta partida"`
+- If `type` is omitted or `null`, defaults to `"NORMAL"`
+
+**Errors:**
+- `"Não é o turno desse jogador"` — not your turn
+- `"Partida não está em andamento"` — game not in progress
+- `"Jogador já atirou nessa posição"` — cell already attacked
+- `"Torpedo já foi utilizado nesta partida"` — torpedo already used this match
 
 ---
 
@@ -1223,16 +1245,21 @@ If a reconnection is detected (player had previously disconnected), the server a
 │ 5. BATTLE PHASE (loop until game over)                           │
 ├─────────────────────────────────────────────────────────────────┤
 │ Current turn player sends: /app/game/{gameId}/attack             │
-│   {"cell": "C4"}                                                 │
+│   {"cell": "C4", "type": "NORMAL"}  (or "TORPEDO")              │
 │                                                                  │
 │ Server publishes (in order):                                     │
-│   1. ATTACK_RESULT {attackerId, cell, hit}                       │
+│   1. ATTACK_RESULT {attackerId, cell, hit, attackType}           │
 │   2. (if sunk) SHIP_SUNK {ownerId, shipType, positions}          │
 │   3a. (if game over) GAME_OVER {winnerId, loserId, reason}       │
 │   3b. (if miss) TURN_CHANGE {nextTurn=opponent, turnTimeout}     │
 │   3c. (if hit, not game over) TURN_CHANGE {nextTurn=same player} │
 │                                                                  │
 │ TURN RULE: If you HIT, you get another turn. Miss = turn passes. │
+│                                                                  │
+│ TORPEDO: Each player has 1 torpedo per match.                    │
+│   If torpedo hits → entire ship sinks instantly.                 │
+│   If torpedo misses → behaves like normal miss, turn passes.     │
+│   Check torpedoAvailable in GET /games/{gameId}/state.           │
 │                                                                  │
 │ If player doesn't attack within 60s:                             │
 │   Server publishes: TURN_TIMEOUT → TURN_CHANGE                   │
@@ -1321,6 +1348,65 @@ J  [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ]
 
 ---
 
+## Torpedo Mechanic
+
+### Overview
+
+Each player has **1 torpedo per match**. The torpedo is a special attack that, if it hits any position of a ship, **sinks the entire ship instantly** — regardless of the ship's size or how many positions have already been hit.
+
+### Rules
+
+| Rule | Description |
+|------|-------------|
+| Quantity | 1 torpedo per player per match |
+| Hit behavior | If the torpedo hits a ship, ALL positions of that ship are marked as hit and the ship is immediately sunk |
+| Miss behavior | Behaves exactly like a normal shot: registers a miss, turn passes to the opponent |
+| Turn on hit | Same as normal: if torpedo hits, the player keeps the turn |
+| Availability | Check `torpedoAvailable` field in `GET /games/{gameId}/state` response |
+| Error on reuse | If torpedo already used: `"Torpedo já foi utilizado nesta partida"` |
+
+### How to Use
+
+1. Check that `torpedoAvailable` is `true` in the game state
+2. Send an attack with `"type": "TORPEDO"`:
+   ```json
+   {
+     "cell": "C4",
+     "type": "TORPEDO"
+   }
+   ```
+3. The server response and events will include `"attackType": "TORPEDO"` so the frontend can render a different animation
+
+### Event Flow (Torpedo Hit)
+
+```
+Client sends: {"cell": "C4", "type": "TORPEDO"}
+
+Server publishes:
+  1. ATTACK_RESULT {attackerId, cell: "C4", hit: true, attackType: "TORPEDO"}
+  2. SHIP_SUNK {ownerId, shipType: "CARRIER", positions: ["C1","C2","C3","C4","C5"]}
+  3. TURN_CHANGE {nextTurn: same player} or GAME_OVER (if all ships sunk)
+```
+
+### Event Flow (Torpedo Miss)
+
+```
+Client sends: {"cell": "C4", "type": "TORPEDO"}
+
+Server publishes:
+  1. ATTACK_RESULT {attackerId, cell: "C4", hit: false, attackType: "TORPEDO"}
+  2. TURN_CHANGE {nextTurn: opponent}
+```
+
+### Notes for Frontend
+
+- The torpedo is consumed even if it misses
+- After using the torpedo, `torpedoAvailable` in game state will be `false`
+- The `attackType` field in `ATTACK_RESULT` event and `AttackResponse` indicates when a torpedo was used — use this to trigger torpedo-specific animations
+- When a torpedo sinks a ship, the `SHIP_SUNK` event contains all positions of the destroyed ship (same as normal sink)
+
+---
+
 ## Quick Reference: All Subscriptions
 
 | Topic | When to Subscribe | Events Received |
@@ -1334,7 +1420,7 @@ J  [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ]
 
 | Destination | When to Send | Body |
 |-------------|-------------|------|
-| `/app/game/{gameId}/attack` | During your turn | `{"cell": "C4"}` |
+| `/app/game/{gameId}/attack` | During your turn | `{"cell": "C4", "type": "NORMAL"}` |
 | `/app/game/{gameId}/register` | After connecting to game WS | `{}` (empty) |
 
 ## Quick Reference: Endpoint Authentication

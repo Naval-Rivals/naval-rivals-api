@@ -32,11 +32,12 @@ public class GameEventPublisher {
      * ATTACK_RESULT — publicado após cada ataque.
      * Informa a ambos os jogadores o que aconteceu.
      */
-    public void publishAttackResult(UUID gameId, UUID attackerId, String cell, boolean hit) {
+    public void publishAttackResult(UUID gameId, UUID attackerId, String cell, boolean hit, String attackType) {
         publish(gameId, "ATTACK_RESULT", Map.of(
                 "attackerId", attackerId,
                 "cell", cell,
-                "hit", hit
+                "hit", hit,
+                "attackType", attackType
         ));
     }
 

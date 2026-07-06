@@ -63,13 +63,14 @@ public class GameWebSocketController {
     ) {
         User user = extractUser(principal);
         Position position = CellConverter.toPosition(request.cell());
+        String attackType = request.type() != null ? request.type() : "NORMAL";
 
         // Cancela o timer ANTES de executar o ataque para evitar race condition
         // com handleTimeout() que poderia trocar o turno simultaneamente
         turnTimerService.cancelTimer(gameId);
 
         // Executa o ataque
-        Shot shot = gameService.shoot(gameId, user, position);
+        Shot shot = gameService.shoot(gameId, user, position, attackType);
 
         // Busca estado atualizado do game
         Game game = gameService.findById(gameId);
@@ -80,7 +81,7 @@ public class GameWebSocketController {
                 : game.getPlayer1().getPlayerId();
 
         // Publica ATTACK_RESULT no tópico de eventos
-        eventPublisher.publishAttackResult(gameId, user.getId(), request.cell(), shot.isHit());
+        eventPublisher.publishAttackResult(gameId, user.getId(), request.cell(), shot.isHit(), attackType);
 
         // Verifica se afundou navio
         var opponentBoard = game.getOpponentBoardOf(user.getId());
@@ -121,7 +122,8 @@ public class GameWebSocketController {
                 shipType,
                 gameOver,
                 gameOver ? game.getWinnerId() : null,
-                gameOver ? null : game.getCurrentTurn()
+                gameOver ? null : game.getCurrentTurn(),
+                attackType
         );
         messagingTemplate.convertAndSend("/topic/game/" + gameId + "/attack", response);
 

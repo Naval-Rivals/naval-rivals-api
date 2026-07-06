@@ -11,6 +11,7 @@ public record AttackResponse(
         String shipType,
         boolean gameOver,
         UUID winnerId,
-        UUID nextTurn
+        UUID nextTurn,
+        String attackType
 ) {
 }

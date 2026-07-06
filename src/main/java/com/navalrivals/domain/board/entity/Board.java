@@ -18,12 +18,22 @@ public class Board {
     private final List<Shot> shots;
     private List<Ship> ships;
     private boolean ready;
+    private boolean torpedoUsed;
 
     public Board(User player){
         this.playerId = player.getId();
         this.shots = new ArrayList<>();
         this.ships = new ArrayList<>();
         this.ready = false;
+        this.torpedoUsed = false;
+    }
+
+    public boolean isTorpedoAvailable() {
+        return !torpedoUsed;
+    }
+
+    public void markTorpedoUsed() {
+        this.torpedoUsed = true;
     }
 
     public void setShip(List<Ship> ships){
@@ -53,6 +63,42 @@ public class Board {
         Shot shot = new Shot(position, hit);
         shots.add(shot);
         return shot;
+    }
+
+    /**
+     * Recebe um torpedo na posição indicada.
+     * Se acertar um navio, afunda o navio inteiro instantaneamente
+     * (registra shots em todas as posições do navio que ainda não foram atingidas).
+     * Se errar, comporta-se como um tiro normal (registra miss).
+     */
+    public Shot receiveTorpedo(Position position) {
+        Ship targetShip = ships.stream()
+                .filter(ship -> !ship.isSunken())
+                .filter(ship -> ship.getPositions().stream()
+                        .anyMatch(pos -> pos.getRow() == position.getRow() && pos.getCol() == position.getCol()))
+                .findFirst()
+                .orElse(null);
+
+        if (targetShip == null) {
+            // Miss — comportamento idêntico ao tiro normal
+            Shot shot = new Shot(position, false);
+            shots.add(shot);
+            return shot;
+        }
+
+        // Hit — afunda o navio inteiro instantaneamente
+        // Registra shots para todas as posições do navio que ainda não foram atingidas
+        for (Position shipPos : targetShip.getPositions()) {
+            boolean alreadyShot = shots.stream()
+                    .anyMatch(s -> s.getPosition().getRow() == shipPos.getRow()
+                            && s.getPosition().getCol() == shipPos.getCol());
+            if (!alreadyShot) {
+                shots.add(new Shot(shipPos, true));
+            }
+        }
+
+        targetShip.setSunken(true);
+        return new Shot(position, true);
     }
 
     public boolean allShipsSunk() {

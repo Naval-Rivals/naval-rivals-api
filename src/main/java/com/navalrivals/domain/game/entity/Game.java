@@ -89,7 +89,7 @@ public class Game {
         }
     }
 
-    public synchronized Shot shoot(UUID shooterId, Position position) {
+    public synchronized Shot shoot(UUID shooterId, Position position, String attackType) {
         if (this.status != GameStatus.IN_PROGRESS) {
             throw new MatchStatusException("Partida não está em andamento");
         }
@@ -107,7 +107,18 @@ public class Game {
             throw new PlayerWithoutPermissionException("Jogador já atirou nessa posição");
         }
 
-        Shot shot = opponentBoard.receiveShot(position);
+        Shot shot;
+
+        if ("TORPEDO".equalsIgnoreCase(attackType)) {
+            Board shooterBoard = getBoardOf(shooterId);
+            if (!shooterBoard.isTorpedoAvailable()) {
+                throw new PlayerWithoutPermissionException("Torpedo já foi utilizado nesta partida");
+            }
+            shooterBoard.markTorpedoUsed();
+            shot = opponentBoard.receiveTorpedo(position);
+        } else {
+            shot = opponentBoard.receiveShot(position);
+        }
 
         if (opponentBoard.allShipsSunk()) {
             finish(shooterId);

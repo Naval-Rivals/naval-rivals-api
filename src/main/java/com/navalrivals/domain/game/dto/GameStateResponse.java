@@ -16,7 +16,8 @@ public record GameStateResponse(
         UUID myPlayerId,
         List<ShipInfo> myShips,
         List<ShotInfo> myShotsReceived,
-        List<ShotInfo> myShotsMade
+        List<ShotInfo> myShotsMade,
+        boolean torpedoAvailable
 ) {
     public record ShipInfo(ShipType type, List<Position> positions, boolean sunk) {
         public ShipInfo(Ship ship) {
