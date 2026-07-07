@@ -1,6 +1,7 @@
 package com.navalrivals.domain.game.dto;
 
 import com.navalrivals.domain.game.entity.GameResult;
+import com.navalrivals.domain.game.enums.GameMode;
 import com.navalrivals.domain.game.enums.GameStatus;
 import com.navalrivals.domain.user.dto.UserResponse;
 
@@ -11,6 +12,7 @@ public record GameResultResponse(
         UUID gameId,
         String roomCode,
         GameStatus status,
+        GameMode gameMode,
         UserResponse winner,
         UserResponse loser,
         Long durationSeconds,
@@ -23,6 +25,7 @@ public record GameResultResponse(
                 result.getId(),
                 result.getRoomCode(),
                 result.getStatus(),
+                result.getGameMode(),
                 new UserResponse(result.getWinner()),
                 new UserResponse(result.getLoser()),
                 result.getDurationSeconds(),

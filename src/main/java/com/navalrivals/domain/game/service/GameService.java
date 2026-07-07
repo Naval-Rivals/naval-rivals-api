@@ -5,7 +5,8 @@ import com.navalrivals.domain.game.dto.GameResultResponse;
 import com.navalrivals.domain.game.dto.GameStateResponse;
 import com.navalrivals.domain.game.entity.Game;
 import com.navalrivals.domain.game.entity.GameResult;
-import com.navalrivals.domain.stats.entity.Stats;
+import com.navalrivals.domain.game.enums.AbilityType;
+import com.navalrivals.domain.game.enums.GameMode;
 import com.navalrivals.domain.game.enums.GameStatus;
 import com.navalrivals.domain.game.repository.GameResultRepository;
 import com.navalrivals.domain.game.storage.GameStorage;
@@ -14,6 +15,7 @@ import com.navalrivals.domain.room.entity.Room;
 import com.navalrivals.domain.room.repository.RoomRepository;
 import com.navalrivals.domain.ship.entity.Ship;
 import com.navalrivals.domain.shot.entity.Shot;
+import com.navalrivals.domain.stats.entity.Stats;
 import com.navalrivals.domain.user.entity.User;
 import com.navalrivals.domain.user.repository.UserRepository;
 import com.navalrivals.infra.exception.exceptions.NotFoundException;
@@ -38,8 +40,8 @@ public class GameService {
     private final GameWebSocketService gameWebSocketService;
     private final TurnTimerService turnTimerService;
 
-    public Game createGame(User player) {
-        var game = new Game(player);
+    public Game createGame(User player, GameMode gameMode) {
+        var game = new Game(player, gameMode);
         storage.save(game);
         return game;
     }
@@ -86,6 +88,21 @@ public class GameService {
         return shot;
     }
 
+    /**
+     * Usa uma habilidade no modo tático.
+     * Delega para Game.useAbility() que valida regras e executa.
+     */
+    public List<Position> useAbility(UUID gameId, User player, AbilityType ability, Position target) {
+        var game = storage.findById(gameId)
+                .orElseThrow(() -> new NotFoundException("Partida não encontrada"));
+
+        if (!game.hasPlayer(player.getId())) {
+            throw new PlayerWithoutPermissionException("Jogador não pertence a essa partida");
+        }
+
+        return game.useAbility(player.getId(), ability, target);
+    }
+
     public GameResultResponse getGameResult(UUID gameId) {
         var result = gameResultRepository.findById(gameId)
                 .orElseThrow(() -> new NotFoundException("Resultado da partida não encontrado"));
@@ -129,6 +146,7 @@ public class GameService {
         result.setId(game.getId());
         result.setRoomCode(roomCode);
         result.setStatus(game.getStatus());
+        result.setGameMode(game.getGameMode());
         result.setWinner(winner);
         result.setLoser(loser);
         result.setDurationSeconds(durationSeconds);
@@ -148,10 +166,12 @@ public class GameService {
         Stats winnerStats = winner.getStats();
         if (winnerStats != null) {
             winnerStats.registerVictory();
+            userRepository.save(winner);
         }
         Stats loserStats = loser.getStats();
         if (loserStats != null) {
             loserStats.registerDefeat();
+            userRepository.save(loser);
         }
     }
 
@@ -182,15 +202,29 @@ public class GameService {
                 ? opponentBoard.getShots().stream().map(GameStateResponse.ShotInfo::new).toList()
                 : List.<GameStateResponse.ShotInfo>of();
 
+        // Habilidades (null se modo clássico)
+        GameStateResponse.AbilitiesInfo abilities = null;
+        if (game.getGameMode() == GameMode.TACTICAL) {
+            abilities = new GameStateResponse.AbilitiesInfo(
+                    myBoard.isRadarAvailable(),
+                    myBoard.getShieldCharges(),
+                    myBoard.isShieldActive(),
+                    myBoard.isEmpNavalAvailable(),
+                    myBoard.getEmpDisabledTurns()
+            );
+        }
+
         return new GameStateResponse(
                 game.getId(),
                 game.getStatus(),
+                game.getGameMode(),
                 game.getCurrentTurn(),
                 player.getId(),
                 myShips,
                 myShotsReceived,
                 myShotsMade,
-                myBoard.isTorpedoAvailable()
+                myBoard.isTorpedoAvailable(),
+                abilities
         );
     }
 

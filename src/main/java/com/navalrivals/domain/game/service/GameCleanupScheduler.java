@@ -12,12 +12,14 @@ import java.time.Duration;
 import java.time.Instant;
 
 /**
- * Remove jogos abandonados da memória periodicamente.
+ * Remove jogos abandonados/órfãos da memória periodicamente.
  *
- * Um jogo é considerado abandonado se está em WAITING_OPPONENT ou PLACING_SHIPS
- * por mais de 15 minutos (ninguém posicionou, sala ficou inativa).
+ * Critérios de remoção:
+ * - WAITING_OPPONENT ou PLACING_SHIPS: sem atividade por mais de 15 minutos
+ * - IN_PROGRESS: sem atividade por mais de 10 minutos (ambos jogadores abandonaram)
+ * - FINISHED: sem remoção após 2 minutos (falha no fluxo normal de cleanup)
  *
- * Roda a cada 5 minutos.
+ * Roda a cada 2 minutos.
  */
 @Slf4j
 @Component
@@ -25,23 +27,48 @@ import java.time.Instant;
 public class GameCleanupScheduler {
 
     private static final Duration ABANDONED_THRESHOLD = Duration.ofMinutes(15);
+    private static final Duration INACTIVE_IN_PROGRESS_THRESHOLD = Duration.ofMinutes(10);
+    private static final Duration FINISHED_THRESHOLD = Duration.ofMinutes(2);
 
     private final GameStorage gameStorage;
     private final TurnTimerService turnTimerService;
 
-    @Scheduled(fixedRate = 300_000) // 5 minutos
+    @Scheduled(fixedRate = 120_000) // 2 minutos
     public void cleanupAbandonedGames() {
-        Instant cutoff = Instant.now().minus(ABANDONED_THRESHOLD);
+        Instant now = Instant.now();
 
         var removed = gameStorage.removeIf(game -> {
             GameStatus status = game.getStatus();
-            boolean isStale = (status == GameStatus.WAITING_OPPONENT || status == GameStatus.PLACING_SHIPS)
-                    && game.getCreatedAt().isBefore(cutoff);
-            return isStale;
+            Instant lastActivity = game.getLastActivityAt();
+
+            // WAITING_OPPONENT ou PLACING_SHIPS: sem atividade por 15 minutos
+            if ((status == GameStatus.WAITING_OPPONENT || status == GameStatus.PLACING_SHIPS)
+                    && lastActivity.isBefore(now.minus(ABANDONED_THRESHOLD))) {
+                turnTimerService.cancelTimer(game.getId());
+                log.debug("Cleanup: removendo jogo {} (status={}, inativo desde {})", game.getId(), status, lastActivity);
+                return true;
+            }
+
+            // IN_PROGRESS: sem atividade por 10 minutos (ambos abandonaram)
+            if (status == GameStatus.IN_PROGRESS
+                    && lastActivity.isBefore(now.minus(INACTIVE_IN_PROGRESS_THRESHOLD))) {
+                turnTimerService.cancelTimer(game.getId());
+                log.debug("Cleanup: removendo jogo {} (IN_PROGRESS órfão, inativo desde {})", game.getId(), lastActivity);
+                return true;
+            }
+
+            // FINISHED: não foi removido pelo fluxo normal após 2 minutos
+            if (status == GameStatus.FINISHED
+                    && lastActivity.isBefore(now.minus(FINISHED_THRESHOLD))) {
+                log.debug("Cleanup: removendo jogo {} (FINISHED não limpo, desde {})", game.getId(), lastActivity);
+                return true;
+            }
+
+            return false;
         });
 
         if (removed > 0) {
-            log.info("Cleanup: {} jogos abandonados removidos da memória", removed);
+            log.info("Cleanup: {} jogos abandonados/órfãos removidos da memória", removed);
         }
     }
 }

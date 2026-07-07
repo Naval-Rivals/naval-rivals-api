@@ -1,8 +1,11 @@
 package com.navalrivals.domain.game.controller;
 
+import com.navalrivals.domain.game.dto.AbilityRequest;
 import com.navalrivals.domain.game.dto.AttackRequest;
 import com.navalrivals.domain.game.dto.AttackResponse;
 import com.navalrivals.domain.game.entity.Game;
+import com.navalrivals.domain.game.enums.AbilityType;
+import com.navalrivals.domain.game.enums.GameMode;
 import com.navalrivals.domain.game.enums.GameStatus;
 import com.navalrivals.domain.game.service.GameDisconnectService;
 import com.navalrivals.domain.game.service.GameEventPublisher;
@@ -22,13 +25,15 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.stereotype.Controller;
 
 import java.security.Principal;
+import java.util.List;
 import java.util.UUID;
 
 /**
  * Controller WebSocket para ações de jogo em tempo real.
  *
  * Endpoints STOMP:
- * - /app/game/{gameId}/attack  → processa ataque e publica resultado
+ * - /app/game/{gameId}/attack   → processa ataque e publica resultado
+ * - /app/game/{gameId}/ability  → usa habilidade (modo tático)
  * - /app/game/{gameId}/register → registra sessão para tracking de desconexão
  */
 @Controller
@@ -80,6 +85,13 @@ public class GameWebSocketController {
                 ? game.getPlayer2().getPlayerId()
                 : game.getPlayer1().getPlayerId();
 
+        // No modo tático, se o tiro foi bloqueado, publica evento de bloqueio ANTES do ATTACK_RESULT
+        if (game.getGameMode() == GameMode.TACTICAL && shot.isBlocked()) {
+            if (shot.getBlockedBy() == Shot.BlockedBy.SHIELD) {
+                eventPublisher.publishShieldBlocked(gameId, opponentId, request.cell());
+            }
+        }
+
         // Publica ATTACK_RESULT no tópico de eventos
         eventPublisher.publishAttackResult(gameId, user.getId(), request.cell(), shot.isHit(), attackType);
 
@@ -130,6 +142,64 @@ public class GameWebSocketController {
         // Limpa jogo da memória após publicar todos os eventos
         if (gameOver) {
             gameService.removeGame(gameId);
+        }
+    }
+
+    /**
+     * Usa uma habilidade no modo tático.
+     *
+     * Habilidades disponíveis:
+     * - SHIELD: ativa escudo (não consome turno)
+     * - RADAR: revela bloco 3x3 (consome turno)
+     * - EMP_NAVAL: desativa habilidades do oponente por 2 turnos (consome turno)
+     */
+    @MessageMapping("/game/{gameId}/ability")
+    public void ability(
+            @DestinationVariable UUID gameId,
+            AbilityRequest request,
+            Principal principal
+    ) {
+        User user = extractUser(principal);
+
+        AbilityType abilityType = request.ability();
+        Position target = request.cell() != null ? CellConverter.toPosition(request.cell()) : null;
+
+        // Para habilidades que consomem turno (RADAR, EMP), cancela timer antes
+        boolean consumesTurn = (abilityType == AbilityType.RADAR || abilityType == AbilityType.EMP_NAVAL);
+        if (consumesTurn) {
+            turnTimerService.cancelTimer(gameId);
+        }
+
+        // Executa a habilidade
+        List<Position> result = gameService.useAbility(gameId, user, abilityType, target);
+
+        // Busca estado atualizado
+        Game game = gameService.findById(gameId);
+        UUID opponentId = game.getPlayer1().getPlayerId().equals(user.getId())
+                ? game.getPlayer2().getPlayerId()
+                : game.getPlayer1().getPlayerId();
+
+        // Publica eventos de acordo com a habilidade
+        switch (abilityType) {
+            case SHIELD -> {
+                var myBoard = game.getBoardOf(user.getId());
+                eventPublisher.publishShieldActivated(gameId, user.getId(), myBoard.getShieldCharges());
+            }
+            case RADAR -> {
+                List<String> revealedCells = result.stream()
+                        .map(CellConverter::toCell)
+                        .toList();
+                eventPublisher.publishRadarResult(gameId, user.getId(), request.cell(), revealedCells);
+                // Radar consome turno → publica TURN_CHANGE e reinicia timer
+                eventPublisher.publishTurnChange(gameId, game.getCurrentTurn(), turnTimerService.getTurnTimeout());
+                turnTimerService.startTimer(gameId);
+            }
+            case EMP_NAVAL -> {
+                eventPublisher.publishEmpActivated(gameId, user.getId(), opponentId, 2);
+                // EMP consome turno → publica TURN_CHANGE e reinicia timer
+                eventPublisher.publishTurnChange(gameId, game.getCurrentTurn(), turnTimerService.getTurnTimeout());
+                turnTimerService.startTimer(gameId);
+            }
         }
     }
 

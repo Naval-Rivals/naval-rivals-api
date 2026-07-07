@@ -26,7 +26,7 @@ public class AuthController {
             UriComponentsBuilder uriBuilder
     ){
         var response = userService.register(requestBody);
-        var uri = uriBuilder.path("users/{id}").buildAndExpand(response.id()fi).toUri();
+        var uri = uriBuilder.path("users/{id}").buildAndExpand(response.id()).toUri();
         return ResponseEntity.created(uri).body(response);
     }
 

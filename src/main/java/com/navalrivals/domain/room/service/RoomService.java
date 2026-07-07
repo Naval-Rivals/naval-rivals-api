@@ -1,6 +1,8 @@
 package com.navalrivals.domain.room.service;
 
+import com.navalrivals.domain.game.enums.GameMode;
 import com.navalrivals.domain.game.service.GameService;
+import com.navalrivals.domain.room.dto.CreateRoomRequest;
 import com.navalrivals.domain.room.dto.JoinRoomRequest;
 import com.navalrivals.domain.room.dto.RoomResponse;
 import com.navalrivals.domain.room.entity.Room;
@@ -31,9 +33,12 @@ public class RoomService {
     private final SecureRandom random = new SecureRandom();
 
     @Transactional
-    public RoomResponse create(User host) {
+    public RoomResponse create(User host, CreateRoomRequest request) {
+        GameMode gameMode = request != null && request.gameMode() != null
+                ? request.gameMode()
+                : GameMode.CLASSIC;
         String code = generateUniqueCode();
-        var room = new Room(host, code);
+        var room = new Room(host, code, gameMode);
         roomRepository.save(room);
         return new RoomResponse(room);
     }
@@ -54,7 +59,7 @@ public class RoomService {
         room.setOpponent(player);
         room.setStatus(RoomStatus.FULL);
 
-        var game = gameService.createGame(room.getHost());
+        var game = gameService.createGame(room.getHost(), room.getGameMode());
         gameService.joinGame(game.getId(), player);
         room.setGameId(game.getId());
 

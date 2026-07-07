@@ -17,8 +17,10 @@
    - [Room Events](#room-events)
    - [Placement Events](#placement-events)
    - [Game Events](#game-events)
+   - [Tactical Mode Events](#tactical-mode-events)
 8. [Complete Game Flow](#complete-game-flow)
 9. [Torpedo Mechanic](#torpedo-mechanic)
+10. [Tactical Mode](#tactical-mode)
 
 ---
 
@@ -101,6 +103,16 @@ WAITING_OPPONENT | PLACING_SHIPS | IN_PROGRESS | FINISHED
 ### RoomStatus
 ```
 WAITING | FULL | PLACING_SHIPS | IN_PROGRESS | FINISHED
+```
+
+### GameMode
+```
+CLASSIC | TACTICAL
+```
+
+### AbilityType (Tactical Mode only)
+```
+TORPEDO | RADAR | SHIELD | EMP_NAVAL
 ```
 
 ### ShipType
@@ -352,7 +364,18 @@ WAITING | FULL | PLACING_SHIPS | IN_PROGRESS | FINISHED
 
 Creates a new room. The authenticated user becomes the host.
 
-**Request Body:** None
+**Request Body:** (optional)
+```json
+{
+  "gameMode": "CLASSIC"
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| gameMode | String | `"CLASSIC"` | Game mode: `"CLASSIC"` or `"TACTICAL"` |
+
+If no body is sent, defaults to `CLASSIC` mode.
 
 **Response: 201 Created**
 ```json
@@ -360,6 +383,7 @@ Creates a new room. The authenticated user becomes the host.
   "id": "880e8400-e29b-41d4-a716-446655440000",
   "code": "NR-A1B2",
   "status": "WAITING",
+  "gameMode": "CLASSIC",
   "host": {
     "id": "550e8400-e29b-41d4-a716-446655440000",
     "nickname": "PlayerOne"
@@ -375,6 +399,7 @@ Creates a new room. The authenticated user becomes the host.
 - Room starts with status `WAITING`
 - The creator is the `host`
 - `gameId` is `null` when the room is still waiting for an opponent
+- The `gameMode` determines which abilities are available during the match
 
 ---
 
@@ -400,6 +425,7 @@ Join an existing room by code.
   "id": "880e8400-e29b-41d4-a716-446655440000",
   "code": "NR-A1B2",
   "status": "FULL",
+  "gameMode": "CLASSIC",
   "host": {
     "id": "550e8400-e29b-41d4-a716-446655440000",
     "nickname": "PlayerOne"
@@ -419,7 +445,7 @@ Join an existing room by code.
 - Room must not be full
 - When an opponent joins:
   1. Room status changes to `FULL`
-  2. A Game is automatically created (in-memory)
+  2. A Game is automatically created (in-memory) with the room's `gameMode`
   3. Both players join the game (status becomes `PLACING_SHIPS`)
   4. WebSocket events `PLAYER_JOINED` and `ROOM_READY` are published
   5. The `gameId` is included in the HTTP response (so the opponent has it immediately without needing WebSocket)
@@ -443,6 +469,7 @@ Join an existing room by code.
   "id": "880e8400-e29b-41d4-a716-446655440000",
   "code": "NR-A1B2",
   "status": "FULL",
+  "gameMode": "TACTICAL",
   "host": {
     "id": "550e8400-e29b-41d4-a716-446655440000",
     "nickname": "PlayerOne"
@@ -601,6 +628,7 @@ Get the current game state from the player's perspective.
 {
   "gameId": "660e8400-e29b-41d4-a716-446655440000",
   "status": "IN_PROGRESS",
+  "gameMode": "TACTICAL",
   "currentTurn": "550e8400-e29b-41d4-a716-446655440000",
   "myPlayerId": "550e8400-e29b-41d4-a716-446655440000",
   "myShips": [
@@ -632,7 +660,14 @@ Get the current game state from the player's perspective.
     {"position": {"row": 3, "col": 4}, "hit": true},
     {"position": {"row": 7, "col": 2}, "hit": false}
   ],
-  "torpedoAvailable": true
+  "torpedoAvailable": true,
+  "abilities": {
+    "radarAvailable": true,
+    "shieldCharges": 2,
+    "shieldActive": false,
+    "empNavalAvailable": true,
+    "empDisabledTurns": 0
+  }
 }
 ```
 
@@ -642,7 +677,18 @@ Get the current game state from the player's perspective.
 - `myShotsReceived` = shots the opponent made on the player's board
 - `myShotsMade` = shots the player made on the opponent's board
 - `torpedoAvailable` = whether the player can still use their torpedo (each player has 1 per match)
+- `abilities` = tactical mode abilities info (**null if gameMode is CLASSIC**)
 - This endpoint is useful for reconnection (rebuild the entire board state)
+
+**Abilities field (only present in TACTICAL mode):**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| radarAvailable | boolean | Whether radar can still be used (1 use) |
+| shieldCharges | int | Remaining shield activations (starts at 2) |
+| shieldActive | boolean | Whether a shield is currently active (blocks next incoming shot) |
+| empNavalAvailable | boolean | Whether EMP can still be used (1 use) |
+| empDisabledTurns | int | Turns remaining where YOUR abilities are disabled (by opponent's EMP) |
 
 **Errors:**
 - 404: "Partida não encontrada"
@@ -664,6 +710,7 @@ Get the persisted result of a finished game.
   "gameId": "660e8400-e29b-41d4-a716-446655440000",
   "roomCode": "NR-A1B2",
   "status": "FINISHED",
+  "gameMode": "CLASSIC",
   "winner": {
     "id": "550e8400-e29b-41d4-a716-446655440000",
     "nickname": "PlayerOne",
@@ -1124,6 +1171,117 @@ This is a secondary topic that also receives attack results in a flat format (fo
 
 ---
 
+### Tactical Mode Events
+
+These events are published on `/topic/game/{gameId}/events` only during **TACTICAL** mode games.
+
+---
+
+#### SHIELD_ACTIVATED
+
+Published when a player activates their shield. Both players see this.
+
+```json
+{
+  "event": "SHIELD_ACTIVATED",
+  "gameId": "660e8400-e29b-41d4-a716-446655440000",
+  "payload": {
+    "playerId": "550e8400-e29b-41d4-a716-446655440000",
+    "remainingCharges": 1
+  }
+}
+```
+
+| Payload Field | Type | Description |
+|---------------|------|-------------|
+| playerId | UUID | Player who activated the shield |
+| remainingCharges | int | Shield activations remaining after this use |
+
+**Frontend action:** Show shield icon/indicator on the player's board. Opponent knows a shield is active.
+
+---
+
+#### SHIELD_BLOCKED
+
+Published when an incoming shot (normal or torpedo) is blocked by an active shield. This event is published **before** the `ATTACK_RESULT` event.
+
+```json
+{
+  "event": "SHIELD_BLOCKED",
+  "gameId": "660e8400-e29b-41d4-a716-446655440000",
+  "payload": {
+    "defenderId": "550e8400-e29b-41d4-a716-446655440000",
+    "cell": "C4"
+  }
+}
+```
+
+| Payload Field | Type | Description |
+|---------------|------|-------------|
+| defenderId | UUID | Player whose shield blocked the shot |
+| cell | String | The cell that was targeted |
+
+**Event order when shield blocks:**
+1. `SHIELD_BLOCKED` — shield consumed
+2. `ATTACK_RESULT` — `hit: false` (miss, regardless of whether it would have hit a ship)
+3. `TURN_CHANGE` — turn passes to opponent (since hit is false)
+
+**Frontend action:** Show shield-block animation. The shot registers as a miss even if it would have hit a ship. After this event, the shield is consumed (`shieldActive = false`).
+
+---
+
+#### RADAR_USED
+
+Published when a player uses their radar. Both players see this event (so the opponent knows radar was used), but the revealed cells tell the user which positions have ships.
+
+```json
+{
+  "event": "RADAR_USED",
+  "gameId": "660e8400-e29b-41d4-a716-446655440000",
+  "payload": {
+    "playerId": "550e8400-e29b-41d4-a716-446655440000",
+    "centerCell": "E5",
+    "revealedCells": ["D4", "E5", "E6"]
+  }
+}
+```
+
+| Payload Field | Type | Description |
+|---------------|------|-------------|
+| playerId | UUID | Player who used the radar |
+| centerCell | String | Center of the 3×3 scan area |
+| revealedCells | String[] | Cells within the 3×3 area that contain a ship (can be empty) |
+
+**Frontend action:** Highlight the 3×3 scan area. Mark revealed cells (ships detected). This consumes the player's turn.
+
+---
+
+#### EMP_ACTIVATED
+
+Published when a player uses their EMP Naval. Both players see this.
+
+```json
+{
+  "event": "EMP_ACTIVATED",
+  "gameId": "660e8400-e29b-41d4-a716-446655440000",
+  "payload": {
+    "playerId": "550e8400-e29b-41d4-a716-446655440000",
+    "targetId": "770e8400-e29b-41d4-a716-446655440000",
+    "disabledTurns": 2
+  }
+}
+```
+
+| Payload Field | Type | Description |
+|---------------|------|-------------|
+| playerId | UUID | Player who used EMP |
+| targetId | UUID | Player whose abilities are now disabled |
+| disabledTurns | int | Number of turns abilities are disabled (always 2) |
+
+**Frontend action:** Show EMP effect on opponent. Disable ability buttons for the affected player. This consumes the attacker's turn.
+
+---
+
 ### Sending Messages (Client → Server)
 
 #### Send Attack
@@ -1168,6 +1326,47 @@ This is a secondary topic that also receives attack results in a flat format (fo
 - `"Partida não está em andamento"` — game not in progress
 - `"Jogador já atirou nessa posição"` — cell already attacked
 - `"Torpedo já foi utilizado nesta partida"` — torpedo already used this match
+
+---
+
+#### Use Ability (Tactical Mode only)
+
+**Destination:** `/app/game/{gameId}/ability`
+
+```json
+{
+  "ability": "RADAR",
+  "cell": "E5"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| ability | String | Required. One of: `"SHIELD"`, `"RADAR"`, `"EMP_NAVAL"` |
+| cell | String | Required for RADAR (center of 3×3 scan). Not needed for other abilities. |
+
+**Turn consumption rules:**
+| Ability | Consumes Turn | Description |
+|---------|---------------|-------------|
+| SHIELD | ❌ No | Activate before attacking — you still attack this turn |
+| RADAR | ✅ Yes | Replaces your attack for this turn |
+| EMP_NAVAL | ✅ Yes | Replaces your attack for this turn |
+
+**Business rules:**
+- Only available in `TACTICAL` mode games
+- Must be your turn
+- Game must be in `IN_PROGRESS` status
+- Cannot use any ability while affected by EMP (`empDisabledTurns > 0`)
+- Torpedo is used via the attack endpoint (`"type": "TORPEDO"`), not this ability endpoint
+
+**Errors:**
+- `"Habilidades só estão disponíveis no modo tático"` — game is CLASSIC mode
+- `"Não é o turno desse jogador"` — not your turn
+- `"Habilidades desativadas por EMP"` — affected by EMP
+- `"Escudo não disponível"` — no shield charges left
+- `"Radar já foi utilizado"` — already used
+- `"EMP Naval já foi utilizado"` — already used
+- `"Posição central do radar é obrigatória"` — radar used without cell
 
 ---
 
@@ -1407,13 +1606,132 @@ Server publishes:
 
 ---
 
+## Tactical Mode
+
+### Overview
+
+Tactical Mode is an alternative game mode that adds **5 special abilities** to the classic battleship gameplay. Each ability can be used a limited number of times per match, adding strategic depth to every turn.
+
+The game mode is chosen by the **room host** when creating the room (`"gameMode": "TACTICAL"`). All game rules from Classic mode still apply (same ships, same 10×10 grid, same turn timer, hit = extra turn).
+
+### Abilities
+
+| Ability | Uses | Consumes Turn | Effect |
+|---------|------|---------------|--------|
+| **Torpedo** | 1× | Yes (attack) | Instantly sinks the entire ship if it hits. If it misses, behaves like a normal shot. |
+| **Radar** | 1× | Yes | Scans a 3×3 area centered on the chosen cell. Reveals which cells contain ships (without revealing ship type). |
+| **Shield** | 2× | No | Activates a shield on your board. The next incoming shot is blocked (registers as miss even if it would hit). Also blocks torpedoes. |
+| **EMP Naval** | 1× | Yes | Disables ALL abilities of the opponent for their next 2 turns. They can only fire normal shots during that time. |
+
+### Detailed Ability Rules
+
+#### Torpedo (Attack)
+- Used via the **attack endpoint** with `"type": "TORPEDO"` (same as Classic mode)
+- If EMP is active on the shooter, torpedo cannot be used
+- **Blocked by:** Shield
+- If blocked, the torpedo is consumed but registers as a miss
+
+#### Radar (Utility)
+- Used via the **ability endpoint** with `"ability": "RADAR", "cell": "E5"`
+- The `cell` field is the **center** of the 3×3 scan area
+- Returns a list of cells in the 3×3 area that contain a non-sunken ship
+- Does NOT reveal ship type or whether a cell has already been hit
+- Edge cells: the 3×3 area is clipped to the grid boundaries (cells outside 0-9 are ignored)
+- **Consumes the turn** — the player cannot attack after using radar
+
+#### Shield (Defensive)
+- Used via the **ability endpoint** with `"ability": "SHIELD"` (no cell needed)
+- Activates immediately — the next incoming shot on this board will be blocked
+- Only **one shield can be active** at a time (cannot stack)
+- 2 total charges per match (can activate shield twice across the game)
+- **Does NOT consume the turn** — player can still attack normally after activating
+- Blocks both normal shots AND torpedoes
+- Once triggered (shot blocked), the shield is consumed
+
+#### EMP Naval (Offensive)
+- Used via the **ability endpoint** with `"ability": "EMP_NAVAL"` (no cell needed)
+- Immediately disables the opponent's abilities for their **next 2 turns**
+- During those 2 turns, the opponent cannot: use torpedo, use radar, activate shield, or use EMP
+- Already-active defenses (shield) remain active — EMP only prevents NEW activations
+- The EMP counter decrements at the **start of each affected turn**
+- **Consumes the turn** — the player cannot attack after using EMP
+
+### Interaction Priority (Incoming Attack)
+
+When a shot or torpedo hits a board with active defenses:
+
+```
+Incoming TORPEDO:
+  1. Check Shield → if active, BLOCK (shield consumed)
+  2. Normal torpedo logic (hit = sink ship, miss = miss)
+
+Incoming NORMAL shot:
+  1. Check Shield → if active, BLOCK (shield consumed, registers as miss)
+  2. Normal shot logic (hit or miss)
+```
+
+**Event publication order when blocked:**
+```
+SHIELD_BLOCKED → ATTACK_RESULT (hit: false) → TURN_CHANGE
+```
+
+Only ONE block event is emitted per attack. The `ATTACK_RESULT` always follows with `hit: false`.
+
+### Tactical Mode — Turn Structure
+
+```
+Your Turn:
+  ├── [Optional] Activate SHIELD (does not end turn)
+  └── Choose ONE of:
+      ├── Normal attack → send to /app/game/{gameId}/attack
+      ├── Torpedo attack → send to /app/game/{gameId}/attack with type "TORPEDO"
+      ├── Use RADAR → send to /app/game/{gameId}/ability (ends turn)
+      └── Use EMP_NAVAL → send to /app/game/{gameId}/ability (ends turn)
+```
+
+A player can activate defensive abilities AND attack in the same turn. But they can only use ONE turn-consuming action (attack OR radar OR EMP).
+
+### Example Flow: Tactical Mode Game
+
+```
+Turn 1 (Player A):
+  → Activates SHIELD (no turn consumed, 1 charge remaining)
+  → Fires normal shot at B3 (hit!)
+  → Gets another turn (hit rule)
+  → Fires normal shot at B4 (miss)
+  → Turn passes to Player B
+
+Turn 2 (Player B):
+  → Fires TORPEDO at E5 (hit! Sinks CRUISER)
+  → Gets another turn
+  → Uses RADAR centered at H5
+  → Receives revealed cells: ["G5", "H4", "H5"]
+  → Turn passes to Player A (radar consumed turn)
+
+Turn 3 (Player A):
+  → Uses EMP_NAVAL
+  → Player B's abilities disabled for 2 turns
+  → Turn passes to Player B
+
+Turn 4 (Player B):  [EMP: 2 turns remaining]
+  → Cannot use abilities! Can only fire normal shots.
+  → Fires normal shot at A1 (miss, but SHIELD blocks it → registers as miss)
+  → Turn passes to Player A
+
+Turn 5 (Player A):
+  → Fires normal shot at H4 (hit! found via radar)
+  → Gets another turn...
+```
+
+---
+
 ## Quick Reference: All Subscriptions
 
 | Topic | When to Subscribe | Events Received |
 |-------|-------------------|-----------------|
 | `/topic/room/{roomId}` | After creating/joining room | PLAYER_JOINED, ROOM_READY, PLAYER_LEFT |
 | `/topic/game/{gameId}/placement` | After receiving ROOM_READY | OPPONENT_READY, GAME_STARTED |
-| `/topic/game/{gameId}/events` | After ROOM_READY or GAME_STARTED | ATTACK_RESULT, TURN_CHANGE, TURN_TIMEOUT, SHIP_SUNK, GAME_OVER, OPPONENT_DISCONNECTED, OPPONENT_RECONNECTED |
+| `/topic/game/{gameId}/events` | After ROOM_READY or GAME_STARTED | ATTACK_RESULT, TURN_CHANGE, TURN_TIMEOUT, SHIP_SUNK, GAME_OVER, OPPONENT_DISCONNECTED, OPPONENT_RECONNECTED, SHIELD_ACTIVATED, SHIELD_BLOCKED, RADAR_USED, EMP_ACTIVATED |
 | `/topic/game/{gameId}/attack` | (optional, legacy) | AttackResponse flat object |
 
 ## Quick Reference: All Messages (Client → Server)
@@ -1421,6 +1739,7 @@ Server publishes:
 | Destination | When to Send | Body |
 |-------------|-------------|------|
 | `/app/game/{gameId}/attack` | During your turn | `{"cell": "C4", "type": "NORMAL"}` |
+| `/app/game/{gameId}/ability` | During your turn (Tactical mode) | `{"ability": "RADAR", "cell": "E5"}` |
 | `/app/game/{gameId}/register` | After connecting to game WS | `{}` (empty) |
 
 ## Quick Reference: Endpoint Authentication

@@ -2,6 +2,7 @@ package com.navalrivals.domain.game.service;
 
 import com.navalrivals.domain.game.dto.GameEvent;
 import com.navalrivals.domain.game.util.CellConverter;
+import com.navalrivals.domain.position.entity.Position;
 import com.navalrivals.domain.ship.entity.Ship;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -26,6 +27,18 @@ public class GameEventPublisher {
     private void publish(UUID gameId, String event, Map<String, Object> payload) {
         var gameEvent = new GameEvent(event, gameId, payload);
         messagingTemplate.convertAndSend("/topic/game/" + gameId + "/events", gameEvent);
+    }
+
+    /**
+     * Publica evento para um jogador específico (usado para radar, que só o jogador vê).
+     */
+    private void publishToUser(UUID gameId, UUID playerId, String event, Map<String, Object> payload) {
+        var gameEvent = new GameEvent(event, gameId, payload);
+        messagingTemplate.convertAndSendToUser(
+                playerId.toString(),
+                "/topic/game/" + gameId + "/events",
+                gameEvent
+        );
     }
 
     /**
@@ -110,6 +123,51 @@ public class GameEventPublisher {
     public void publishOpponentReconnected(UUID gameId, UUID reconnectedPlayerId) {
         publish(gameId, "OPPONENT_RECONNECTED", Map.of(
                 "reconnectedPlayerId", reconnectedPlayerId
+        ));
+    }
+
+    // ========== EVENTOS DE HABILIDADES (Modo Tático) ==========
+
+    /**
+     * RADAR_RESULT — publicado APENAS para o jogador que usou o radar.
+     * Retorna as células no bloco 3x3 que contêm navio.
+     */
+    public void publishRadarResult(UUID gameId, UUID playerId, String centerCell, List<String> revealedCells) {
+        publish(gameId, "RADAR_USED", Map.of(
+                "playerId", playerId,
+                "centerCell", centerCell,
+                "revealedCells", revealedCells
+        ));
+    }
+
+    /**
+     * SHIELD_ACTIVATED — notifica ambos os jogadores que o escudo foi ativado.
+     */
+    public void publishShieldActivated(UUID gameId, UUID playerId, int remainingCharges) {
+        publish(gameId, "SHIELD_ACTIVATED", Map.of(
+                "playerId", playerId,
+                "remainingCharges", remainingCharges
+        ));
+    }
+
+    /**
+     * SHIELD_BLOCKED — notifica que um tiro foi bloqueado pelo escudo.
+     */
+    public void publishShieldBlocked(UUID gameId, UUID defenderId, String cell) {
+        publish(gameId, "SHIELD_BLOCKED", Map.of(
+                "defenderId", defenderId,
+                "cell", cell
+        ));
+    }
+
+    /**
+     * EMP_ACTIVATED — notifica ambos que EMP foi usado.
+     */
+    public void publishEmpActivated(UUID gameId, UUID playerId, UUID targetId, int disabledTurns) {
+        publish(gameId, "EMP_ACTIVATED", Map.of(
+                "playerId", playerId,
+                "targetId", targetId,
+                "disabledTurns", disabledTurns
         ));
     }
 }

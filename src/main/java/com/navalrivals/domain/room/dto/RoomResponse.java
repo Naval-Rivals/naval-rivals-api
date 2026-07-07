@@ -1,5 +1,6 @@
 package com.navalrivals.domain.room.dto;
 
+import com.navalrivals.domain.game.enums.GameMode;
 import com.navalrivals.domain.room.entity.Room;
 import com.navalrivals.domain.room.enums.RoomStatus;
 
@@ -10,6 +11,7 @@ public record RoomResponse(
         UUID id,
         String code,
         RoomStatus status,
+        GameMode gameMode,
         PlayerInfo host,
         PlayerInfo opponent,
         UUID gameId,
@@ -20,6 +22,7 @@ public record RoomResponse(
                 room.getId(),
                 room.getCode(),
                 room.getStatus(),
+                room.getGameMode(),
                 new PlayerInfo(room.getHost().getId(), room.getHost().getNickname()),
                 room.getOpponent() != null
                         ? new PlayerInfo(room.getOpponent().getId(), room.getOpponent().getNickname())

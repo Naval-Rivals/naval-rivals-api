@@ -1,5 +1,6 @@
 package com.navalrivals.domain.game.entity;
 
+import com.navalrivals.domain.game.enums.GameMode;
 import com.navalrivals.domain.game.enums.GameStatus;
 import com.navalrivals.domain.user.entity.User;
 import jakarta.persistence.*;
@@ -26,6 +27,10 @@ public class GameResult {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private GameStatus status;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "game_mode", nullable = false, length = 10)
+    private GameMode gameMode;
 
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "winner_id")

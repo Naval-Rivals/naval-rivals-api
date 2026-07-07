@@ -1,5 +1,6 @@
 package com.navalrivals.domain.room.controller;
 
+import com.navalrivals.domain.room.dto.CreateRoomRequest;
 import com.navalrivals.domain.room.dto.JoinRoomRequest;
 import com.navalrivals.domain.room.dto.RoomResponse;
 import com.navalrivals.domain.room.service.RoomService;
@@ -22,10 +23,11 @@ public class RoomController {
 
     @PostMapping
     public ResponseEntity<RoomResponse> create(
+            @RequestBody(required = false) CreateRoomRequest request,
             @AuthenticationPrincipal User user,
             UriComponentsBuilder uriBuilder
     ) {
-        var response = roomService.create(user);
+        var response = roomService.create(user, request);
         var uri = uriBuilder.path("/rooms/{id}").buildAndExpand(response.id()).toUri();
         return ResponseEntity.created(uri).body(response);
     }

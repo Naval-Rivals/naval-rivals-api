@@ -1,5 +1,6 @@
 package com.navalrivals.domain.room.entity;
 
+import com.navalrivals.domain.game.enums.GameMode;
 import com.navalrivals.domain.room.enums.RoomStatus;
 import com.navalrivals.domain.user.entity.User;
 import jakarta.persistence.*;
@@ -39,12 +40,17 @@ public class Room {
     @Column(name = "game_id")
     private UUID gameId;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "game_mode", nullable = false, length = 10)
+    private GameMode gameMode;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
-    public Room(User host, String code) {
+    public Room(User host, String code, GameMode gameMode) {
         this.host = host;
         this.code = code;
+        this.gameMode = gameMode;
         this.status = RoomStatus.WAITING;
         this.createdAt = Instant.now();
     }

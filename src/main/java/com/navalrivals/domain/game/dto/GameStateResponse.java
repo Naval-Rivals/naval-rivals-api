@@ -1,5 +1,6 @@
 package com.navalrivals.domain.game.dto;
 
+import com.navalrivals.domain.game.enums.GameMode;
 import com.navalrivals.domain.game.enums.GameStatus;
 import com.navalrivals.domain.position.entity.Position;
 import com.navalrivals.domain.ship.entity.Ship;
@@ -12,12 +13,14 @@ import java.util.UUID;
 public record GameStateResponse(
         UUID gameId,
         GameStatus status,
+        GameMode gameMode,
         UUID currentTurn,
         UUID myPlayerId,
         List<ShipInfo> myShips,
         List<ShotInfo> myShotsReceived,
         List<ShotInfo> myShotsMade,
-        boolean torpedoAvailable
+        boolean torpedoAvailable,
+        AbilitiesInfo abilities
 ) {
     public record ShipInfo(ShipType type, List<Position> positions, boolean sunk) {
         public ShipInfo(Ship ship) {
@@ -30,4 +33,16 @@ public record GameStateResponse(
             this(shot.getPosition(), shot.isHit());
         }
     }
+
+    /**
+     * Informações de habilidades disponíveis para o modo tático.
+     * Null se o modo for CLASSIC.
+     */
+    public record AbilitiesInfo(
+            boolean radarAvailable,
+            int shieldCharges,
+            boolean shieldActive,
+            boolean empNavalAvailable,
+            int empDisabledTurns
+    ) {}
 }
