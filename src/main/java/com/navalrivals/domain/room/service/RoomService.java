@@ -45,7 +45,7 @@ public class RoomService {
 
     @Transactional
     public RoomResponse joinByCode(JoinRoomRequest request, User player) {
-        var room = roomRepository.findByCode(request.code().toUpperCase())
+        var room = roomRepository.findByCodeForUpdate(request.code().toUpperCase())
                 .orElseThrow(() -> new NotFoundException("Sala não encontrada"));
 
         if (room.isHost(player.getId())) {
@@ -54,6 +54,10 @@ public class RoomService {
 
         if (room.isFull()) {
             throw new RoomFullException("Sala já está cheia");
+        }
+
+        if (room.getGameId() != null) {
+            throw new RoomFullException("Partida já foi criada para esta sala");
         }
 
         room.setOpponent(player);

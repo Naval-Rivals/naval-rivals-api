@@ -6,10 +6,12 @@ spring:
     username: ${SPRING_DATASOURCE_USERNAME}
     password: ${SPRING_DATASOURCE_PASSWORD}
   flyway:
-    enabled: true
+    enabled: trueno ca
 
 api:
   security:
+    cors:
+      origins: ${FRONT_DOMAIN}
     token:
       secret: ${JWT_SECRET:default-dev-secret-naval-rivals}
 

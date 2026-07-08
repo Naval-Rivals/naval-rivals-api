@@ -63,7 +63,7 @@ public class UserService {
 
     public AuthResponse login(LoginUserRequest data){
         try {
-            var authenticationToken = new UsernamePasswordAuthenticationToken(data.email(), data.password());
+            var authenticationToken = new UsernamePasswordAuthenticationToken(data.login(), data.password());
             var authentication = authenticationManager.authenticate(authenticationToken);
 
             var user = (User) authentication.getPrincipal();
@@ -72,7 +72,7 @@ public class UserService {
             return new AuthResponse(tokenJwt, user);
 
         } catch (Exception e){
-            throw new BadCredencialsException("E-mail ou senha incorretos");
+            throw new BadCredencialsException("Credenciais inválidas");
         }
     }
 

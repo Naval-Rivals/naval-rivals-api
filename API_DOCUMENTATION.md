@@ -179,15 +179,23 @@ TORPEDO | RADAR | SHIELD | EMP_NAVAL
 **Request Body:**
 ```json
 {
-  "email": "player@example.com",
+  "login": "player@example.com",
   "password": "secret123"
 }
 ```
 
-| Field | Type | Validations |
-|-------|------|------------|
-| email | String | Required, valid email format |
-| password | String | Required |
+or using nickname:
+```json
+{
+  "login": "PlayerOne",
+  "password": "secret123"
+}
+```
+
+| Field | Type | Validations | Description |
+|-------|------|------------|-------------|
+| login | String | Required | Email or nickname (case-sensitive) |
+| password | String | Required | |
 
 **Response: 200 OK**
 ```json
@@ -200,7 +208,7 @@ TORPEDO | RADAR | SHIELD | EMP_NAVAL
 ```
 
 **Errors:**
-- 401: "E-mail ou senha incorretos"
+- 401: "Credenciais inválidas"
 
 ---
 
