@@ -230,14 +230,17 @@ public class GameDisconnectService {
             winnerId = game.getPlayer1().getPlayerId();
         }
 
-        // Finaliza o jogo
-        game.finish(winnerId);
+        // Finaliza o jogo — se retornar false, outro thread já finalizou
+        if (!game.finish(winnerId)) {
+            log.debug("Jogo {} já foi finalizado por outro thread, ignorando", gameId);
+            return;
+        }
+
+        // Persiste resultado ANTES de publicar (frontend busca logo após GAME_OVER)
+        gameService.persistGameResult(game);
 
         // Publica GAME_OVER
         eventPublisher.publishGameOver(gameId, winnerId, disconnectedPlayerId, "OPPONENT_DISCONNECTED");
-
-        // Persiste resultado
-        gameService.persistGameResult(game);
 
         // Limpa timer e game da memória
         turnTimerService.cancelTimer(gameId);

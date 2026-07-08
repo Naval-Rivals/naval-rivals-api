@@ -14,7 +14,7 @@ import java.time.Instant;
 @Service
 public class TokenService {
 
-    private static final long TOKEN_EXPIRATION_SECONDS = 86400; // 24 horas
+    private static final long TOKEN_EXPIRATION_SECONDS = 518400; // 72 horas
 
     @Value("${api.security.token.secret}")
     private String secret;

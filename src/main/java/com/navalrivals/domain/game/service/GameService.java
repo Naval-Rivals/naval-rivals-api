@@ -115,6 +115,14 @@ public class GameService {
             return;
         }
 
+        try {
+            doPersistGameResult(game);
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            // Outro thread já persistiu — tudo certo
+        }
+    }
+
+    private void doPersistGameResult(Game game) {
         UUID winnerId = game.getWinnerId();
         UUID loserId = getLoserIdFrom(game, winnerId);
 

@@ -217,10 +217,11 @@ public class Game {
         this.lastActivityAt = Instant.now();
     }
 
-    public synchronized void finish(UUID winnerId) {
-        if (this.status == GameStatus.FINISHED) return;
+    public synchronized boolean finish(UUID winnerId) {
+        if (this.status == GameStatus.FINISHED) return false;
         this.status = GameStatus.FINISHED;
         this.winnerId = winnerId;
+        return true;
     }
 
     private void switchTurn() {
