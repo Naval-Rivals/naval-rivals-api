@@ -6,14 +6,23 @@ spring:
     username: ${SPRING_DATASOURCE_USERNAME}
     password: ${SPRING_DATASOURCE_PASSWORD}
   flyway:
-    enabled: trueno ca
+    enabled: true
 
 api:
   security:
     cors:
       origins: ${FRONT_DOMAIN}
     token:
-      secret: ${JWT_SECRET:default-dev-secret-naval-rivals}
+      secret: ${SECRET_TOKEN_API}
+
+game:
+  turn-timeout-seconds: 60
+  reconnect-timeout-seconds: 30
+  cleanup:
+    abandoned-threshold-minutes: 15
+    inactive-in-progress-threshold-minutes: 10
+    finished-threshold-minutes: 2
+    interval-ms: 120000
 
 server:
   servlet:

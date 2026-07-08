@@ -975,8 +975,9 @@ Published when BOTH players have placed their ships. The game transitions to `IN
 ### Game Events
 
 **Topic:** `/topic/game/{gameId}/events`
+**User Topic:** `/user/topic/game/{gameId}/events` (private events, e.g., radar results)
 
-Subscribe to this topic during the battle phase. All game events are published here.
+Subscribe to both topics during the battle phase. Public events are broadcast to all players. Private events (like radar results) are sent only to the relevant player via the user topic.
 
 Each event has this structure:
 ```json
@@ -1240,11 +1241,37 @@ Published when an incoming shot (normal or torpedo) is blocked by an active shie
 
 #### RADAR_USED
 
-Published when a player uses their radar. Both players see this event (so the opponent knows radar was used), but the revealed cells tell the user which positions have ships.
+Published to **all players** on `/topic/game/{gameId}/events` when a player uses their radar. Notifies the opponent that radar was used, but does **NOT** reveal ship positions.
 
 ```json
 {
   "event": "RADAR_USED",
+  "gameId": "660e8400-e29b-41d4-a716-446655440000",
+  "payload": {
+    "playerId": "550e8400-e29b-41d4-a716-446655440000",
+    "centerCell": "E5"
+  }
+}
+```
+
+| Payload Field | Type | Description |
+|---------------|------|-------------|
+| playerId | UUID | Player who used the radar |
+| centerCell | String | Center of the 3×3 scan area |
+
+**Frontend action (opponent):** Show a visual indicator that the opponent used radar on that area.
+
+---
+
+#### RADAR_RESULT
+
+Published **only to the player who used radar** on `/user/topic/game/{gameId}/events`. Contains the revealed ship positions.
+
+> ⚠️ The frontend MUST subscribe to `/user/topic/game/{gameId}/events` to receive this event.
+
+```json
+{
+  "event": "RADAR_RESULT",
   "gameId": "660e8400-e29b-41d4-a716-446655440000",
   "payload": {
     "playerId": "550e8400-e29b-41d4-a716-446655440000",
@@ -1260,7 +1287,7 @@ Published when a player uses their radar. Both players see this event (so the op
 | centerCell | String | Center of the 3×3 scan area |
 | revealedCells | String[] | Cells within the 3×3 area that contain a ship (can be empty) |
 
-**Frontend action:** Highlight the 3×3 scan area. Mark revealed cells (ships detected). This consumes the player's turn.
+**Frontend action (radar user):** Highlight the 3×3 scan area. Mark revealed cells (ships detected). This consumes the player's turn.
 
 ---
 
@@ -1432,6 +1459,7 @@ If a reconnection is detected (player had previously disconnected), the server a
 │ Connect to ws://localhost:8080/ws with Authorization header       │
 │ Subscribe: /topic/game/{gameId}/placement                        │
 │ Subscribe: /topic/game/{gameId}/events                           │
+│ Subscribe: /user/topic/game/{gameId}/events (private events)     │
 │ Subscribe: /topic/game/{gameId}/attack (optional, legacy)        │
 │ Send: /app/game/{gameId}/register (IMPORTANT!)                   │
 └─────────────────────────────────────────────────────────────────┘

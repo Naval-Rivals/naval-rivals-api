@@ -217,7 +217,8 @@ public class Game {
         this.lastActivityAt = Instant.now();
     }
 
-    public void finish(UUID winnerId) {
+    public synchronized void finish(UUID winnerId) {
+        if (this.status == GameStatus.FINISHED) return;
         this.status = GameStatus.FINISHED;
         this.winnerId = winnerId;
     }

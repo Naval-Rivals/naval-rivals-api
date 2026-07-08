@@ -8,9 +8,9 @@ import com.navalrivals.domain.room.repository.RoomRepository;
 import com.navalrivals.domain.room.service.RoomWebSocketService;
 import com.navalrivals.domain.user.entity.User;
 import com.navalrivals.domain.user.repository.UserRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import jakarta.annotation.PreDestroy;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
@@ -22,17 +22,15 @@ import java.util.concurrent.*;
  *
  * Fluxo:
  * 1. Jogador desconecta → pausa timer, publica OPPONENT_DISCONNECTED
- * 2. Inicia countdown de 30s para reconexão
- * 3a. Se reconectar antes de 30s → cancela countdown, publica OPPONENT_RECONNECTED, retoma timer
+ * 2. Inicia countdown para reconexão (configurável)
+ * 3a. Se reconectar antes do timeout → cancela countdown, publica OPPONENT_RECONNECTED, retoma timer
  * 3b. Se NÃO reconectar → o oponente vence por W.O., publica GAME_OVER
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class GameDisconnectService {
 
-    private static final int RECONNECT_TIMEOUT_SECONDS = 30;
-
+    private final int reconnectTimeoutSeconds;
     private final GameEventPublisher eventPublisher;
     private final GameStorage gameStorage;
     private final TurnTimerService turnTimerService;
@@ -42,6 +40,26 @@ public class GameDisconnectService {
     private final UserRepository userRepository;
 
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
+
+    public GameDisconnectService(
+            @Value("${game.reconnect-timeout-seconds}") int reconnectTimeoutSeconds,
+            GameEventPublisher eventPublisher,
+            GameStorage gameStorage,
+            TurnTimerService turnTimerService,
+            GameService gameService,
+            RoomRepository roomRepository,
+            RoomWebSocketService roomWebSocketService,
+            UserRepository userRepository
+    ) {
+        this.reconnectTimeoutSeconds = reconnectTimeoutSeconds;
+        this.eventPublisher = eventPublisher;
+        this.gameStorage = gameStorage;
+        this.turnTimerService = turnTimerService;
+        this.gameService = gameService;
+        this.roomRepository = roomRepository;
+        this.roomWebSocketService = roomWebSocketService;
+        this.userRepository = userRepository;
+    }
 
     /**
      * Mapeia sessionId (WebSocket) → info do jogador na partida.
@@ -90,12 +108,12 @@ public class GameDisconnectService {
         turnTimerService.pauseTimer(gameId);
 
         // Publica OPPONENT_DISCONNECTED
-        eventPublisher.publishOpponentDisconnected(gameId, playerId, RECONNECT_TIMEOUT_SECONDS);
+        eventPublisher.publishOpponentDisconnected(gameId, playerId, reconnectTimeoutSeconds);
 
         // Agenda timeout de reconexão (30s)
         ScheduledFuture<?> future = scheduler.schedule(() -> {
             handleReconnectTimeout(gameId, playerId);
-        }, RECONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        }, reconnectTimeoutSeconds, TimeUnit.SECONDS);
 
         reconnectTimers.put(playerId, future);
     }
@@ -229,6 +247,32 @@ public class GameDisconnectService {
     }
 
     private record PlayerSession(UUID gameId, UUID playerId) {}
+
+    /**
+     * Remove todas as sessões e timers de reconexão associados a um jogo finalizado.
+     * Chamado quando o jogo termina (por ataque ou desconexão) para evitar memory leak.
+     */
+    public void cleanupGame(UUID gameId) {
+        // Remove sessões associadas ao jogo
+        sessionMap.entrySet().removeIf(entry -> entry.getValue().gameId().equals(gameId));
+
+        // Cancela timers de reconexão dos jogadores desse jogo
+        var gameOpt = gameStorage.findById(gameId);
+        if (gameOpt.isPresent()) {
+            Game game = gameOpt.get();
+            cancelReconnectTimer(game.getPlayer1().getPlayerId());
+            if (game.getPlayer2() != null) {
+                cancelReconnectTimer(game.getPlayer2().getPlayerId());
+            }
+        }
+    }
+
+    private void cancelReconnectTimer(UUID playerId) {
+        ScheduledFuture<?> future = reconnectTimers.remove(playerId);
+        if (future != null) {
+            future.cancel(false);
+        }
+    }
 
     @PreDestroy
     public void shutdown() {

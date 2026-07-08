@@ -133,10 +133,15 @@ public class GameEventPublisher {
      * Retorna as células no bloco 3x3 que contêm navio.
      */
     public void publishRadarResult(UUID gameId, UUID playerId, String centerCell, List<String> revealedCells) {
-        publish(gameId, "RADAR_USED", Map.of(
+        publishToUser(gameId, playerId, "RADAR_RESULT", Map.of(
                 "playerId", playerId,
                 "centerCell", centerCell,
                 "revealedCells", revealedCells
+        ));
+        // Notifica o oponente que radar foi usado (sem revelar resultado)
+        publish(gameId, "RADAR_USED", Map.of(
+                "playerId", playerId,
+                "centerCell", centerCell
         ));
     }
 

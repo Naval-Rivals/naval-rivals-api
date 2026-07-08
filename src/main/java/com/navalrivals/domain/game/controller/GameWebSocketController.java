@@ -141,6 +141,7 @@ public class GameWebSocketController {
 
         // Limpa jogo da memória após publicar todos os eventos
         if (gameOver) {
+            disconnectService.cleanupGame(gameId);
             gameService.removeGame(gameId);
         }
     }

@@ -3,9 +3,9 @@ package com.navalrivals.domain.game.service;
 import com.navalrivals.domain.game.entity.Game;
 import com.navalrivals.domain.game.enums.GameStatus;
 import com.navalrivals.domain.game.storage.GameStorage;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import jakarta.annotation.PreDestroy;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
@@ -25,13 +25,21 @@ import java.util.concurrent.*;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class TurnTimerService {
 
-    private static final int TURN_TIMEOUT_SECONDS = 60;
-
+    private final int turnTimeoutSeconds;
     private final GameEventPublisher eventPublisher;
     private final GameStorage storage;
+
+    public TurnTimerService(
+            @Value("${game.turn-timeout-seconds}") int turnTimeoutSeconds,
+            GameEventPublisher eventPublisher,
+            GameStorage storage
+    ) {
+        this.turnTimeoutSeconds = turnTimeoutSeconds;
+        this.eventPublisher = eventPublisher;
+        this.storage = storage;
+    }
 
     /**
      * Armazena o ScheduledFuture de cada jogo para poder cancelar.
@@ -62,7 +70,7 @@ public class TurnTimerService {
      */
     public void startTimer(UUID gameId) {
         cancelTimer(gameId);
-        scheduleTimeout(gameId, TURN_TIMEOUT_SECONDS * 1000L);
+        scheduleTimeout(gameId, turnTimeoutSeconds * 1000L);
     }
 
     /**
@@ -93,7 +101,7 @@ public class TurnTimerService {
         Long startedAt = timerStartedAt.remove(gameId);
         if (startedAt != null) {
             long elapsed = System.currentTimeMillis() - startedAt;
-            long remaining = (TURN_TIMEOUT_SECONDS * 1000L) - elapsed;
+            long remaining = (turnTimeoutSeconds * 1000L) - elapsed;
             if (remaining > 0) {
                 pausedRemainingMs.put(gameId, remaining);
             }
@@ -153,14 +161,14 @@ public class TurnTimerService {
 
         // Publica eventos
         eventPublisher.publishTurnTimeout(gameId, timedOutPlayer, nextTurn);
-        eventPublisher.publishTurnChange(gameId, nextTurn, TURN_TIMEOUT_SECONDS);
+        eventPublisher.publishTurnChange(gameId, nextTurn, turnTimeoutSeconds);
 
         // Reinicia timer para o novo turno
         startTimer(gameId);
     }
 
     public int getTurnTimeout() {
-        return TURN_TIMEOUT_SECONDS;
+        return turnTimeoutSeconds;
     }
 
     @PreDestroy

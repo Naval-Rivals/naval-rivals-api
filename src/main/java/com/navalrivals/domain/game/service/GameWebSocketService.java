@@ -1,7 +1,7 @@
 package com.navalrivals.domain.game.service;
 
 import com.navalrivals.domain.game.dto.GamePlacementEvent;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
@@ -18,12 +18,18 @@ import java.util.UUID;
  */
 
 @Service
-@RequiredArgsConstructor
 public class GameWebSocketService {
 
-    private static final int TURN_TIMEOUT_SECONDS = 60;
-
+    private final int turnTimeoutSeconds;
     private final SimpMessagingTemplate messagingTemplate;
+
+    public GameWebSocketService(
+            @Value("${game.turn-timeout-seconds}") int turnTimeoutSeconds,
+            SimpMessagingTemplate messagingTemplate
+    ) {
+        this.turnTimeoutSeconds = turnTimeoutSeconds;
+        this.messagingTemplate = messagingTemplate;
+    }
 
     /**
      * Publica OPPONENT_READY — informa ao oponente que este jogador já posicionou.
@@ -50,7 +56,7 @@ public class GameWebSocketService {
      * @param firstTurn ID do jogador que tem o primeiro turno
      */
     public void notifyGameStarted(UUID gameId, UUID playerId, UUID firstTurn){
-        var event = new GamePlacementEvent("GAME_STARTED", gameId, playerId, firstTurn, TURN_TIMEOUT_SECONDS);
+        var event = new GamePlacementEvent("GAME_STARTED", gameId, playerId, firstTurn, turnTimeoutSeconds);
         messagingTemplate.convertAndSend("/topic/game/" + gameId + "/placement", event);
     }
 

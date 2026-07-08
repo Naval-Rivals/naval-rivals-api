@@ -1,5 +1,6 @@
 package com.navalrivals.infra.security.interceptor;
 
+import com.navalrivals.domain.user.entity.User;
 import com.navalrivals.domain.user.repository.UserRepository;
 import com.navalrivals.infra.exception.exceptions.NotFoundException;
 import com.navalrivals.infra.security.service.TokenService;
@@ -48,10 +49,15 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
             String token = authHeader.replace("Bearer ", "");
             String email = tokenService.validateToken(token);
 
-            var user = userRepository.findByEmail(email)
+            var user = (User) userRepository.findByEmail(email)
                     .orElseThrow(() -> new NotFoundException("Usuário não encontrado"));
 
-            var authentication = new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
+            var authentication = new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities()) {
+                @Override
+                public String getName() {
+                    return user.getId().toString();
+                }
+            };
 
             accessor.setUser(authentication);
         }
