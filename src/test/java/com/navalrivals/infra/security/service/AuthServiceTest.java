@@ -31,7 +31,7 @@ class AuthServiceTest {
     @DisplayName("Deve retornar usuário quando encontrado")
     void shouldReturnUserWhenEmailExists(){
         String emailTeste = "testandodasilva@email";
-        User user = new User(UUID.randomUUID(), "Teste da Silva", emailTeste , "123");
+        User user = new User(UUID.randomUUID(), "Teste da Silva", emailTeste, "123", null);
 
         when(userRepository.findByEmail(emailTeste)).thenReturn(Optional.of(user));
 

@@ -47,9 +47,10 @@ class UserServiceTest {
     @DisplayName("Deve cadastrar corretamente o usuário")
     void shouldRegisterUserSuccessfully() {
         RegisterUserRequest request =
-                new RegisterUserRequest("Teste", "email@email.com", "123");
+                new RegisterUserRequest("Teste", "email@email.com", "123456", "123456");
 
         when(userRepository.existsByEmail(request.email())).thenReturn(false);
+        when(userRepository.existsByNickname(request.nickname())).thenReturn(false);
         when(encoder.encode(request.password())).thenReturn("hashed");
 
         User userMock = mock(User.class);
@@ -62,7 +63,7 @@ class UserServiceTest {
         AuthResponse response = userService.register(request);
 
         assertNotNull(response);
-        assertEquals("token", response.accessToken());
+        assertEquals("token", response.token());
 
         verify(userRepository).save(any(User.class));
         verify(encoder).encode(request.password());
@@ -72,7 +73,7 @@ class UserServiceTest {
     @DisplayName("Deve lançar erro quando email já existe")
     void shouldThrowExceptionWhenEmailAlreadyExists() {
         RegisterUserRequest request =
-                new RegisterUserRequest("Teste", "email@email.com", "123");
+                new RegisterUserRequest("Teste", "email@email.com", "123456", "123456");
 
         when(userRepository.existsByEmail(request.email())).thenReturn(true);
 
@@ -84,7 +85,7 @@ class UserServiceTest {
     @DisplayName("Deve logar corretamente")
     void shouldLoginSuccessfully() {
         LoginUserRequest request =
-                new LoginUserRequest("email@email.com", "123");
+                new LoginUserRequest("email@email.com", "123456");
 
         User user = mock(User.class);
         Authentication authentication = mock(Authentication.class);
@@ -96,14 +97,14 @@ class UserServiceTest {
         AuthResponse response = userService.login(request);
 
         assertNotNull(response);
-        assertEquals("token", response.accessToken());
+        assertEquals("token", response.token());
     }
 
     @Test
     @DisplayName("Deve lançar erro no login")
     void shouldThrowBadCredentialsOnLoginFailure() {
         LoginUserRequest request =
-                new LoginUserRequest("email@email.com", "123");
+                new LoginUserRequest("email@email.com", "123456");
 
         when(authenticationManager.authenticate(any()))
                 .thenThrow(new RuntimeException());
@@ -161,13 +162,13 @@ class UserServiceTest {
         User user = mock(User.class);
 
         UpdatePasswordRequest request =
-                new UpdatePasswordRequest("old", "new");
+                new UpdatePasswordRequest("old", "newPass", "newPass");
 
         when(user.getPassword()).thenReturn("hashedOld");
 
         when(encoder.matches("old", "hashedOld")).thenReturn(true);
-        when(encoder.matches("new", "hashedOld")).thenReturn(false);
-        when(encoder.encode("new")).thenReturn("hashedNew");
+        when(encoder.matches("newPass", "hashedOld")).thenReturn(false);
+        when(encoder.encode("newPass")).thenReturn("hashedNew");
 
         userService.changePassword(request, user);
 
@@ -184,7 +185,7 @@ class UserServiceTest {
         when(encoder.matches("wrong", "hashed")).thenReturn(false);
 
         UpdatePasswordRequest request =
-                new UpdatePasswordRequest("wrong", "new");
+                new UpdatePasswordRequest("wrong", "newPass", "newPass");
 
         assertThrows(BadCredencialsException.class,
                 () -> userService.changePassword(request, user));
@@ -201,7 +202,7 @@ class UserServiceTest {
         when(encoder.matches("same", "hashed")).thenReturn(true);
 
         UpdatePasswordRequest request =
-                new UpdatePasswordRequest("old", "same");
+                new UpdatePasswordRequest("old", "same", "same");
 
         assertThrows(BadCredencialsException.class,
                 () -> userService.changePassword(request, user));
