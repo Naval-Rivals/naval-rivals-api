@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -46,5 +47,15 @@ public class RoomWebSocketService {
     public void notifyPlayerLeft(UUID roomId, UUID userId, String nickname){
         var message = new RoomEventMessage("PLAYER_LEFT", roomId, userId, nickname, null);
         messagingTemplate.convertAndSend("/topic/room/" + roomId, message);
+    }
+
+    /**
+     * Publica evento LOBBY_UPDATED — sinal para clientes inscritos no lobby
+     * re-buscarem a lista de salas via GET /rooms.
+     *
+     * Tópico: /topic/lobby
+     */
+    public void notifyLobbyUpdated() {
+        messagingTemplate.convertAndSend("/topic/lobby", (Object) Map.of("event", "LOBBY_UPDATED"));
     }
 }

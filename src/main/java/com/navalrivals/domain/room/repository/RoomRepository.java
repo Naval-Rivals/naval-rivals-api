@@ -8,6 +8,8 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -16,6 +18,8 @@ public interface RoomRepository extends JpaRepository<Room, UUID> {
     boolean existsByCode(String code);
     Optional<Room> findByHostIdAndStatus(UUID hostId, RoomStatus status);
     Optional<Room> findByGameId(UUID gameId);
+    List<Room> findByStatusOrderByCreatedAtDesc(RoomStatus status);
+    List<Room> findByStatusAndCreatedAtBefore(RoomStatus status, Instant threshold);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT r FROM Room r WHERE r.code = :code")

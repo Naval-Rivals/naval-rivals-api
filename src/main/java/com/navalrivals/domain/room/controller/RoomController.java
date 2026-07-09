@@ -12,6 +12,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -39,6 +40,12 @@ public class RoomController {
     ) {
         var response = roomService.joinByCode(request, user);
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping
+    public ResponseEntity<List<RoomResponse>> listWaiting() {
+        var rooms = roomService.listWaitingRooms();
+        return ResponseEntity.ok(rooms);
     }
 
     @GetMapping("/{roomId}")

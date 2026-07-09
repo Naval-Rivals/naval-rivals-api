@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -25,6 +26,7 @@ public class RoomService {
 
     private final RoomRepository roomRepository;
     private final RoomWebSocketService roomWebSocketService;
+    private final RoomSessionService roomSessionService;
     private final GameService gameService;
 
     private static final String CODE_CHARACTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -34,12 +36,20 @@ public class RoomService {
 
     @Transactional
     public RoomResponse create(User host, CreateRoomRequest request) {
+        // Se o host já tem uma sala WAITING, deleta a anterior
+        roomRepository.findByHostIdAndStatus(host.getId(), RoomStatus.WAITING)
+                .ifPresent(existingRoom -> {
+                    roomSessionService.unregisterRoom(existingRoom.getId());
+                    roomRepository.delete(existingRoom);
+                });
+
         GameMode gameMode = request != null && request.gameMode() != null
                 ? request.gameMode()
                 : GameMode.CLASSIC;
         String code = generateUniqueCode();
         var room = new Room(host, code, gameMode);
         roomRepository.save(room);
+        roomWebSocketService.notifyLobbyUpdated();
         return new RoomResponse(room);
     }
 
@@ -69,6 +79,7 @@ public class RoomService {
 
         roomWebSocketService.notifyPlayerJoined(room.getId(), player.getId(), player.getNickname());
         roomWebSocketService.notifyRoomReady(room.getId(), player.getId(), player.getNickname(), game.getId());
+        roomWebSocketService.notifyLobbyUpdated();
 
         return new RoomResponse(room);
     }
@@ -105,6 +116,14 @@ public class RoomService {
             room.setOpponent(null);
             room.setStatus(RoomStatus.WAITING);
         }
+
+        roomWebSocketService.notifyLobbyUpdated();
+    }
+
+    public List<RoomResponse> listWaitingRooms() {
+        return roomRepository.findByStatusOrderByCreatedAtDesc(RoomStatus.WAITING).stream()
+                .map(RoomResponse::new)
+                .toList();
     }
 
     private String generateUniqueCode() {
