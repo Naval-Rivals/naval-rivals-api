@@ -9,6 +9,7 @@ import com.navalrivals.domain.game.enums.GameMode;
 import com.navalrivals.domain.game.enums.GameStatus;
 import com.navalrivals.domain.game.service.GameDisconnectService;
 import com.navalrivals.domain.game.service.GameEventPublisher;
+import com.navalrivals.domain.game.service.GameResultService;
 import com.navalrivals.domain.game.service.GameService;
 import com.navalrivals.domain.game.service.TurnTimerService;
 import com.navalrivals.domain.game.util.CellConverter;
@@ -41,6 +42,7 @@ import java.util.UUID;
 public class GameWebSocketController {
 
     private final GameService gameService;
+    private final GameResultService gameResultService;
     private final SimpMessagingTemplate messagingTemplate;
     private final GameEventPublisher eventPublisher;
     private final TurnTimerService turnTimerService;
@@ -114,17 +116,7 @@ public class GameWebSocketController {
 
         boolean gameOver = game.getStatus() == GameStatus.FINISHED;
 
-        if (gameOver) {
-            // Publica GAME_OVER e cancela timer
-            eventPublisher.publishGameOver(gameId, game.getWinnerId(), opponentId, "ALL_SHIPS_SUNK");
-            turnTimerService.cancelTimer(gameId);
-        } else {
-            // Publica TURN_CHANGE e reinicia timer para o próximo turno
-            eventPublisher.publishTurnChange(gameId, game.getCurrentTurn(), turnTimerService.getTurnTimeout());
-            turnTimerService.startTimer(gameId);
-        }
-
-        // Publica AttackResponse no tópico de attack (para compatibilidade com frontend)
+        // Publica AttackResponse PRIMEIRO (frontend vê resultado do tiro imediatamente)
         AttackResponse response = new AttackResponse(
                 gameId,
                 user.getId(),
@@ -139,10 +131,23 @@ public class GameWebSocketController {
         );
         messagingTemplate.convertAndSend("/topic/game/" + gameId + "/attack", response);
 
-        // Limpa jogo da memória após publicar todos os eventos
         if (gameOver) {
+            // Persiste GameResult ANTES de publicar GAME_OVER
+            // (garante que o GET /games/{id}/result funcione quando o frontend buscar)
+            gameResultService.persistGameResult(game);
+
+            // Publica GAME_OVER (frontend navega para tela de resultado e faz GET)
+            eventPublisher.publishGameOver(gameId, game.getWinnerId(), opponentId, "ALL_SHIPS_SUNK");
+            turnTimerService.cancelTimer(gameId);
+
+            // Atualiza stats dos jogadores de forma assíncrona (não bloqueia)
+            gameResultService.updatePlayerStatsAsync(game.getWinnerId(), opponentId);
             disconnectService.cleanupGame(gameId);
             gameService.removeGame(gameId);
+        } else {
+            // Publica TURN_CHANGE e reinicia timer para o próximo turno
+            eventPublisher.publishTurnChange(gameId, game.getCurrentTurn(), turnTimerService.getTurnTimeout());
+            turnTimerService.startTimer(gameId);
         }
     }
 

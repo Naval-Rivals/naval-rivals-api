@@ -132,6 +132,12 @@ public class Game {
             shot = opponentBoard.receiveShot(position);
         }
 
+        // Decrementa EMP do jogador que atacou (conta cada ataque como 1 turno de EMP)
+        if (gameMode == GameMode.TACTICAL) {
+            Board shooterBoard = getBoardOf(shooterId);
+            shooterBoard.decrementEmpDisabledTurns();
+        }
+
         if (opponentBoard.allShipsSunk()) {
             finish(shooterId);
         } else if (!shot.isHit()) {
@@ -209,6 +215,12 @@ public class Game {
     }
 
     public synchronized void forceSwapTurn() {
+        // Decrementa EMP do jogador que deu timeout (timeout conta como turno para EMP)
+        if (gameMode == GameMode.TACTICAL) {
+            Board currentPlayerBoard = getBoardOf(currentTurn);
+            currentPlayerBoard.decrementEmpDisabledTurns();
+        }
+
         if (currentTurn.equals(player1.getPlayerId())) {
             this.currentTurn = player2.getPlayerId();
         } else {
@@ -229,12 +241,6 @@ public class Game {
             this.currentTurn = player2.getPlayerId();
         } else {
             this.currentTurn = player1.getPlayerId();
-        }
-
-        // Decrementa EMP do jogador que vai jogar agora
-        if (gameMode == GameMode.TACTICAL) {
-            Board nextPlayerBoard = getBoardOf(currentTurn);
-            nextPlayerBoard.decrementEmpDisabledTurns();
         }
     }
 

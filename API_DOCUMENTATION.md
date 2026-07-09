@@ -696,7 +696,7 @@ Get the current game state from the player's perspective.
 | shieldCharges | int | Remaining shield activations (starts at 2) |
 | shieldActive | boolean | Whether a shield is currently active (blocks next incoming shot) |
 | empNavalAvailable | boolean | Whether EMP can still be used (1 use) |
-| empDisabledTurns | int | Turns remaining where YOUR abilities are disabled (by opponent's EMP) |
+| empDisabledTurns | int | Attacks remaining where YOUR abilities are disabled (by opponent's EMP). Decrements on each attack you make or timeout. |
 
 **Errors:**
 - 404: "Partida não encontrada"
@@ -1311,7 +1311,7 @@ Published when a player uses their EMP Naval. Both players see this.
 |---------------|------|-------------|
 | playerId | UUID | Player who used EMP |
 | targetId | UUID | Player whose abilities are now disabled |
-| disabledTurns | int | Number of turns abilities are disabled (always 2) |
+| disabledTurns | int | Number of attacks abilities are disabled (always 2) |
 
 **Frontend action:** Show EMP effect on opponent. Disable ability buttons for the affected player. This consumes the attacker's turn.
 
@@ -1657,7 +1657,7 @@ The game mode is chosen by the **room host** when creating the room (`"gameMode"
 | **Torpedo** | 1× | Yes (attack) | Instantly sinks the entire ship if it hits. If it misses, behaves like a normal shot. |
 | **Radar** | 1× | Yes | Scans a 3×3 area centered on the chosen cell. Reveals which cells contain ships (without revealing ship type). |
 | **Shield** | 2× | No | Activates a shield on your board. The next incoming shot is blocked (registers as miss even if it would hit). Also blocks torpedoes. |
-| **EMP Naval** | 1× | Yes | Disables ALL abilities of the opponent for their next 2 turns. They can only fire normal shots during that time. |
+| **EMP Naval** | 1× | Yes | Disables ALL abilities of the opponent for their next 2 attacks. They can only fire normal shots during that time. Each attack (hit or miss) and timeout counts toward the counter. |
 
 ### Detailed Ability Rules
 
@@ -1686,10 +1686,11 @@ The game mode is chosen by the **room host** when creating the room (`"gameMode"
 
 #### EMP Naval (Offensive)
 - Used via the **ability endpoint** with `"ability": "EMP_NAVAL"` (no cell needed)
-- Immediately disables the opponent's abilities for their **next 2 turns**
-- During those 2 turns, the opponent cannot: use torpedo, use radar, activate shield, or use EMP
+- Immediately disables the opponent's abilities for their **next 2 attacks**
+- During those 2 attacks, the opponent cannot: use torpedo, use radar, activate shield, or use EMP
+- Each attack (hit or miss) counts as 1 turn toward the EMP counter — including hits that keep the turn
+- A timeout (not attacking within 60s) also counts as 1 turn toward the EMP counter
 - Already-active defenses (shield) remain active — EMP only prevents NEW activations
-- The EMP counter decrements at the **start of each affected turn**
 - **Consumes the turn** — the player cannot attack after using EMP
 
 ### Interaction Priority (Incoming Attack)
@@ -1749,9 +1750,10 @@ Turn 3 (Player A):
   → Player B's abilities disabled for 2 turns
   → Turn passes to Player B
 
-Turn 4 (Player B):  [EMP: 2 turns remaining]
+Turn 4 (Player B):  [EMP: 2 attacks remaining]
   → Cannot use abilities! Can only fire normal shots.
   → Fires normal shot at A1 (miss, but SHIELD blocks it → registers as miss)
+  → EMP counter: 2 → 1 (each attack decrements)
   → Turn passes to Player A
 
 Turn 5 (Player A):

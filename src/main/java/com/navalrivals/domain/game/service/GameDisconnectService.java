@@ -35,6 +35,7 @@ public class GameDisconnectService {
     private final GameStorage gameStorage;
     private final TurnTimerService turnTimerService;
     private final GameService gameService;
+    private final GameResultService gameResultService;
     private final RoomRepository roomRepository;
     private final RoomWebSocketService roomWebSocketService;
     private final UserRepository userRepository;
@@ -47,6 +48,7 @@ public class GameDisconnectService {
             GameStorage gameStorage,
             TurnTimerService turnTimerService,
             GameService gameService,
+            GameResultService gameResultService,
             RoomRepository roomRepository,
             RoomWebSocketService roomWebSocketService,
             UserRepository userRepository
@@ -56,6 +58,7 @@ public class GameDisconnectService {
         this.gameStorage = gameStorage;
         this.turnTimerService = turnTimerService;
         this.gameService = gameService;
+        this.gameResultService = gameResultService;
         this.roomRepository = roomRepository;
         this.roomWebSocketService = roomWebSocketService;
         this.userRepository = userRepository;
@@ -237,10 +240,13 @@ public class GameDisconnectService {
         }
 
         // Persiste resultado ANTES de publicar (frontend busca logo após GAME_OVER)
-        gameService.persistGameResult(game);
+        gameResultService.persistGameResult(game);
 
         // Publica GAME_OVER
         eventPublisher.publishGameOver(gameId, winnerId, disconnectedPlayerId, "OPPONENT_DISCONNECTED");
+
+        // Atualiza stats dos jogadores de forma assíncrona (não bloqueia)
+        gameResultService.updatePlayerStatsAsync(winnerId, disconnectedPlayerId);
 
         // Limpa timer e game da memória
         turnTimerService.cancelTimer(gameId);
