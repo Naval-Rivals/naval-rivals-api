@@ -108,13 +108,15 @@ public class RoomService {
             }
             roomRepository.delete(room);
         } else {
-            // Se a sala tem um jogo ativo, limpa da memória
+            // Se a sala tem um jogo ativo, a sala deve ser encerrada (não pode ser reaberta)
             if (room.getGameId() != null) {
                 gameService.removeGame(room.getGameId());
-                room.setGameId(null);
+                roomRepository.delete(room);
+            } else {
+                // Oponente saiu antes do jogo ser criado (sala ainda WAITING/FULL sem game) — apenas remove o oponente
+                room.setOpponent(null);
+                room.setStatus(RoomStatus.WAITING);
             }
-            room.setOpponent(null);
-            room.setStatus(RoomStatus.WAITING);
         }
 
         roomWebSocketService.notifyLobbyUpdated();

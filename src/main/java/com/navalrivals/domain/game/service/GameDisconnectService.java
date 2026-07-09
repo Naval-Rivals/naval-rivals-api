@@ -178,7 +178,7 @@ public class GameDisconnectService {
      * Trata desconexão durante PLACING_SHIPS:
      * - Emite GAME_OVER com reason OPPONENT_DISCONNECTED no tópico do game
      * - Emite PLAYER_LEFT no tópico da room
-     * - Reseta a room (remove opponent, volta WAITING, limpa gameId)
+     * - Deleta a room (uma vez iniciada, não pode ser reaberta)
      * - Remove o game da memória
      */
     private void handlePlacingShipsDisconnect(UUID gameId, UUID disconnectedPlayerId) {
@@ -196,7 +196,7 @@ public class GameDisconnectService {
         // Publica GAME_OVER no tópico do game
         eventPublisher.publishGameOver(gameId, winnerId, disconnectedPlayerId, "OPPONENT_DISCONNECTED");
 
-        // Busca a room associada e emite PLAYER_LEFT + reseta
+        // Busca a room associada, emite PLAYER_LEFT e deleta
         roomRepository.findByGameId(gameId).ifPresent(room -> {
             String nickname = userRepository.findById(disconnectedPlayerId)
                     .map(User::getNickname)
@@ -204,17 +204,15 @@ public class GameDisconnectService {
 
             roomWebSocketService.notifyPlayerLeft(room.getId(), disconnectedPlayerId, nickname);
 
-            // Reseta a room para WAITING
-            room.setOpponent(null);
-            room.setGameId(null);
-            room.setStatus(RoomStatus.WAITING);
-            roomRepository.save(room);
+            // Deleta a room — uma vez que o jogo foi criado, a sala não pode ser reaberta
+            roomRepository.delete(room);
+            roomWebSocketService.notifyLobbyUpdated();
         });
 
         // Remove o game da memória
         gameService.removeGame(gameId);
 
-        log.info("Jogo {} cancelado durante PLACING_SHIPS por desconexão do jogador {}", gameId, disconnectedPlayerId);
+        log.info("Jogo {} cancelado durante PLACING_SHIPS por desconexão do jogador {}. Sala deletada.", gameId, disconnectedPlayerId);
     }
 
     /**
