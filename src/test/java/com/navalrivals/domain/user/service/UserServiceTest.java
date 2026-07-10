@@ -1,28 +1,35 @@
 package com.navalrivals.domain.user.service;
 
-import com.navalrivals.domain.user.dto.*;
+import com.navalrivals.domain.user.dto.LoginUserRequest;
+import com.navalrivals.domain.user.dto.RegisterUserRequest;
+import com.navalrivals.domain.user.dto.UpdateNicknameRequest;
+import com.navalrivals.domain.user.dto.UpdatePasswordRequest;
 import com.navalrivals.domain.user.entity.User;
 import com.navalrivals.domain.user.repository.UserRepository;
 import com.navalrivals.infra.exception.exceptions.BadCredencialsException;
 import com.navalrivals.infra.exception.exceptions.NotFoundException;
+import com.navalrivals.infra.exception.exceptions.PasswordNotConfirmationException;
 import com.navalrivals.infra.exception.exceptions.UserAlreadyExistsException;
 import com.navalrivals.infra.security.dto.AuthResponse;
 import com.navalrivals.infra.security.service.TokenService;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -43,168 +50,287 @@ class UserServiceTest {
     @InjectMocks
     private UserService userService;
 
-    @Test
-    @DisplayName("Deve cadastrar corretamente o usuário")
-    void shouldRegisterUserSuccessfully() {
-        RegisterUserRequest request =
-                new RegisterUserRequest("Teste", "email@email.com", "123456", "123456");
+    @Nested
+    @DisplayName("register")
+    class Register {
 
-        when(userRepository.existsByEmail(request.email())).thenReturn(false);
-        when(userRepository.existsByNickname(request.nickname())).thenReturn(false);
-        when(encoder.encode(request.password())).thenReturn("hashed");
+        @Test
+        @DisplayName("Deve lançar UserAlreadyExistsException quando email já existe")
+        void shouldThrowWhenEmailAlreadyExists() {
+            var request = new RegisterUserRequest("player1", "player@email.com", "123456", "123456");
 
-        User userMock = mock(User.class);
-        Authentication authentication = mock(Authentication.class);
+            when(userRepository.existsByEmail(request.email())).thenReturn(true);
 
-        when(authenticationManager.authenticate(any())).thenReturn(authentication);
-        when(authentication.getPrincipal()).thenReturn(userMock);
-        when(tokenService.generateToken(userMock)).thenReturn("token");
+            assertThrows(UserAlreadyExistsException.class, () -> userService.register(request));
 
-        AuthResponse response = userService.register(request);
+            verify(userRepository).existsByEmail(request.email());
+            verify(userRepository, never()).save(any());
+        }
 
-        assertNotNull(response);
-        assertEquals("token", response.token());
+        @Test
+        @DisplayName("Deve lançar PasswordNotConfirmationException quando senhas não coincidem")
+        void shouldThrowWhenPasswordsDoNotMatch() {
+            var request = new RegisterUserRequest("player1", "player@email.com", "123456", "654321");
 
-        verify(userRepository).save(any(User.class));
-        verify(encoder).encode(request.password());
+            when(userRepository.existsByEmail(request.email())).thenReturn(false);
+
+            assertThrows(PasswordNotConfirmationException.class, () -> userService.register(request));
+
+            verify(userRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("Deve lançar UserAlreadyExistsException quando nickname já existe")
+        void shouldThrowWhenNicknameAlreadyExists() {
+            var request = new RegisterUserRequest("player1", "player@email.com", "123456", "123456");
+
+            when(userRepository.existsByEmail(request.email())).thenReturn(false);
+            when(userRepository.existsByNickname(request.nickname())).thenReturn(true);
+
+            assertThrows(UserAlreadyExistsException.class, () -> userService.register(request));
+
+            verify(userRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("Deve registrar usuário com sucesso, salvar user + stats, autenticar e retornar token")
+        void shouldRegisterSuccessfully() {
+            var request = new RegisterUserRequest("player1", "player@email.com", "123456", "123456");
+            var encryptedPassword = "encrypted_123456";
+            var expectedToken = "jwt-token-123";
+
+            when(userRepository.existsByEmail(request.email())).thenReturn(false);
+            when(userRepository.existsByNickname(request.nickname())).thenReturn(false);
+            when(encoder.encode(request.password())).thenReturn(encryptedPassword);
+
+            Authentication authentication = mock(Authentication.class);
+            User authenticatedUser = new User(request, encryptedPassword);
+            authenticatedUser.setId(UUID.randomUUID());
+
+            when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
+                    .thenReturn(authentication);
+            when(authentication.getPrincipal()).thenReturn(authenticatedUser);
+            when(tokenService.generateToken(authenticatedUser)).thenReturn(expectedToken);
+
+            AuthResponse response = userService.register(request);
+
+            assertNotNull(response);
+            assertEquals(expectedToken, response.token());
+            assertEquals(authenticatedUser.getNickname(), response.nickname());
+            assertEquals(authenticatedUser.getEmail(), response.email());
+
+            verify(userRepository).save(any(User.class));
+            verify(encoder).encode(request.password());
+            verify(authenticationManager).authenticate(any(UsernamePasswordAuthenticationToken.class));
+            verify(tokenService).generateToken(authenticatedUser);
+        }
     }
 
-    @Test
-    @DisplayName("Deve lançar erro quando email já existe")
-    void shouldThrowExceptionWhenEmailAlreadyExists() {
-        RegisterUserRequest request =
-                new RegisterUserRequest("Teste", "email@email.com", "123456", "123456");
+    @Nested
+    @DisplayName("login")
+    class Login {
 
-        when(userRepository.existsByEmail(request.email())).thenReturn(true);
+        @Test
+        @DisplayName("Deve realizar login com sucesso e retornar token")
+        void shouldLoginSuccessfully() {
+            var request = new LoginUserRequest("player@email.com", "123456");
+            var expectedToken = "jwt-token-456";
 
-        assertThrows(UserAlreadyExistsException.class,
-                () -> userService.register(request));
+            Authentication authentication = mock(Authentication.class);
+            User user = new User();
+            user.setId(UUID.randomUUID());
+            user.setNickname("player1");
+            user.setEmail("player@email.com");
+
+            when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
+                    .thenReturn(authentication);
+            when(authentication.getPrincipal()).thenReturn(user);
+            when(tokenService.generateToken(user)).thenReturn(expectedToken);
+
+            AuthResponse response = userService.login(request);
+
+            assertNotNull(response);
+            assertEquals(expectedToken, response.token());
+            assertEquals(user.getNickname(), response.nickname());
+            assertEquals(user.getEmail(), response.email());
+
+            verify(authenticationManager).authenticate(any(UsernamePasswordAuthenticationToken.class));
+            verify(tokenService).generateToken(user);
+        }
+
+        @Test
+        @DisplayName("Deve lançar BadCredencialsException quando credenciais são inválidas")
+        void shouldThrowWhenCredentialsAreInvalid() {
+            var request = new LoginUserRequest("player@email.com", "wrong_password");
+
+            when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
+                    .thenThrow(new RuntimeException("Bad credentials"));
+
+            assertThrows(BadCredencialsException.class, () -> userService.login(request));
+
+            verify(authenticationManager).authenticate(any(UsernamePasswordAuthenticationToken.class));
+            verify(tokenService, never()).generateToken(any());
+        }
     }
 
-    @Test
-    @DisplayName("Deve logar corretamente")
-    void shouldLoginSuccessfully() {
-        LoginUserRequest request =
-                new LoginUserRequest("email@email.com", "123456");
+    @Nested
+    @DisplayName("getById")
+    class GetById {
 
-        User user = mock(User.class);
-        Authentication authentication = mock(Authentication.class);
+        @Test
+        @DisplayName("Deve retornar UserResponse quando usuário é encontrado")
+        void shouldReturnUserWhenFound() {
+            UUID userId = UUID.randomUUID();
+            User user = new User();
+            user.setId(userId);
+            user.setNickname("player1");
+            user.setEmail("player@email.com");
 
-        when(authenticationManager.authenticate(any())).thenReturn(authentication);
-        when(authentication.getPrincipal()).thenReturn(user);
-        when(tokenService.generateToken(user)).thenReturn("token");
+            when(userRepository.findById(userId)).thenReturn(Optional.of(user));
 
-        AuthResponse response = userService.login(request);
+            var response = userService.getById(userId);
 
-        assertNotNull(response);
-        assertEquals("token", response.token());
+            assertNotNull(response);
+            assertEquals(userId, response.id());
+            assertEquals("player1", response.nickname());
+            assertEquals("player@email.com", response.email());
+
+            verify(userRepository).findById(userId);
+        }
+
+        @Test
+        @DisplayName("Deve lançar NotFoundException quando usuário não é encontrado")
+        void shouldThrowWhenUserNotFound() {
+            UUID userId = UUID.randomUUID();
+
+            when(userRepository.findById(userId)).thenReturn(Optional.empty());
+
+            assertThrows(NotFoundException.class, () -> userService.getById(userId));
+
+            verify(userRepository).findById(userId);
+        }
     }
 
-    @Test
-    @DisplayName("Deve lançar erro no login")
-    void shouldThrowBadCredentialsOnLoginFailure() {
-        LoginUserRequest request =
-                new LoginUserRequest("email@email.com", "123456");
+    @Nested
+    @DisplayName("changeNickname")
+    class ChangeNickname {
 
-        when(authenticationManager.authenticate(any()))
-                .thenThrow(new RuntimeException());
+        @Test
+        @DisplayName("Deve alterar nickname com sucesso")
+        void shouldChangeNicknameSuccessfully() {
+            var request = new UpdateNicknameRequest("newNickname");
+            UUID userId = UUID.randomUUID();
 
-        assertThrows(BadCredencialsException.class,
-                () -> userService.login(request));
+            User user = new User();
+            user.setId(userId);
+            user.setNickname("oldNickname");
+            user.setEmail("player@email.com");
+
+            User managedUser = new User();
+            managedUser.setId(userId);
+            managedUser.setNickname("oldNickname");
+            managedUser.setEmail("player@email.com");
+
+            when(userRepository.existsByNickname(request.nickname())).thenReturn(false);
+            when(userRepository.findById(userId)).thenReturn(Optional.of(managedUser));
+
+            var response = userService.changeNickname(request, user);
+
+            assertNotNull(response);
+            assertEquals("newNickname", response.nickname());
+
+            verify(userRepository).existsByNickname(request.nickname());
+            verify(userRepository).findById(userId);
+        }
+
+        @Test
+        @DisplayName("Deve lançar UserAlreadyExistsException quando nickname já existe")
+        void shouldThrowWhenNicknameAlreadyExists() {
+            var request = new UpdateNicknameRequest("existingNickname");
+            User user = new User();
+            user.setId(UUID.randomUUID());
+
+            when(userRepository.existsByNickname(request.nickname())).thenReturn(true);
+
+            assertThrows(UserAlreadyExistsException.class, () -> userService.changeNickname(request, user));
+
+            verify(userRepository).existsByNickname(request.nickname());
+            verify(userRepository, never()).findById(any());
+        }
     }
 
-    @Test
-    @DisplayName("Deve retornar usuário por ID")
-    void shouldReturnUserById() {
-        UUID id = UUID.randomUUID();
-        User user = new User();
+    @Nested
+    @DisplayName("changePassword")
+    class ChangePassword {
 
-        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        @Test
+        @DisplayName("Deve alterar senha com sucesso")
+        void shouldChangePasswordSuccessfully() {
+            var request = new UpdatePasswordRequest("currentPass", "newPass123", "newPass123");
 
-        UserResponse response = userService.getById(id);
+            User user = new User();
+            user.setId(UUID.randomUUID());
+            user.setPassword("encoded_current_pass");
 
-        assertNotNull(response);
-    }
+            when(encoder.matches("currentPass", "encoded_current_pass")).thenReturn(true);
+            when(encoder.matches("newPass123", "encoded_current_pass")).thenReturn(false);
+            when(encoder.encode("newPass123")).thenReturn("encoded_new_pass");
 
-    @Test
-    @DisplayName("Deve lançar erro quando usuário não encontrado")
-    void shouldThrowWhenUserNotFound() {
-        UUID id = UUID.randomUUID();
+            userService.changePassword(request, user);
 
-        when(userRepository.findById(id)).thenReturn(Optional.empty());
+            assertEquals("encoded_new_pass", user.getPassword());
+            verify(userRepository).save(user);
+            verify(encoder).encode("newPass123");
+        }
 
-        assertThrows(NotFoundException.class,
-                () -> userService.getById(id));
-    }
+        @Test
+        @DisplayName("Deve lançar BadCredencialsException quando senha atual está incorreta")
+        void shouldThrowWhenCurrentPasswordIsIncorrect() {
+            var request = new UpdatePasswordRequest("wrongPass", "newPass123", "newPass123");
 
-    @Test
-    @DisplayName("Deve alterar nickname com sucesso")
-    void shouldChangeNickname() {
-        UUID id = UUID.randomUUID();
+            User user = new User();
+            user.setId(UUID.randomUUID());
+            user.setPassword("encoded_current_pass");
 
-        User user = mock(User.class);
-        when(user.getId()).thenReturn(id);
+            when(encoder.matches("wrongPass", "encoded_current_pass")).thenReturn(false);
 
-        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+            assertThrows(BadCredencialsException.class, () -> userService.changePassword(request, user));
 
-        UpdateNicknameRequest request =
-                new UpdateNicknameRequest("novoNick");
+            verify(userRepository, never()).save(any());
+        }
 
-        UserResponse response = userService.changeNickname(request, user);
+        @Test
+        @DisplayName("Deve lançar BadCredencialsException quando nova senha é igual à atual")
+        void shouldThrowWhenNewPasswordEqualsCurrentPassword() {
+            var request = new UpdatePasswordRequest("currentPass", "currentPass", "currentPass");
 
-        verify(user).setNickname("novoNick");
-        assertNotNull(response);
-    }
+            User user = new User();
+            user.setId(UUID.randomUUID());
+            user.setPassword("encoded_current_pass");
 
-    @Test
-    @DisplayName("Deve alterar senha com sucesso")
-    void shouldChangePasswordSuccessfully() {
-        User user = mock(User.class);
+            when(encoder.matches("currentPass", "encoded_current_pass")).thenReturn(true);
+            when(encoder.matches("currentPass", "encoded_current_pass")).thenReturn(true);
 
-        UpdatePasswordRequest request =
-                new UpdatePasswordRequest("old", "newPass", "newPass");
+            assertThrows(BadCredencialsException.class, () -> userService.changePassword(request, user));
 
-        when(user.getPassword()).thenReturn("hashedOld");
+            verify(userRepository, never()).save(any());
+        }
 
-        when(encoder.matches("old", "hashedOld")).thenReturn(true);
-        when(encoder.matches("newPass", "hashedOld")).thenReturn(false);
-        when(encoder.encode("newPass")).thenReturn("hashedNew");
+        @Test
+        @DisplayName("Deve lançar PasswordNotConfirmationException quando senhas não coincidem")
+        void shouldThrowWhenPasswordConfirmationDoesNotMatch() {
+            var request = new UpdatePasswordRequest("currentPass", "newPass123", "differentPass");
 
-        userService.changePassword(request, user);
+            User user = new User();
+            user.setId(UUID.randomUUID());
+            user.setPassword("encoded_current_pass");
 
-        verify(user).setPassword("hashedNew");
-    }
+            when(encoder.matches("currentPass", "encoded_current_pass")).thenReturn(true);
+            when(encoder.matches("newPass123", "encoded_current_pass")).thenReturn(false);
 
-    @Test
-    @DisplayName("Deve lançar erro se senha atual estiver incorreta")
-    void shouldThrowWhenCurrentPasswordIsWrong() {
-        User user = mock(User.class);
+            assertThrows(PasswordNotConfirmationException.class, () -> userService.changePassword(request, user));
 
-        when(user.getPassword()).thenReturn("hashed");
-
-        when(encoder.matches("wrong", "hashed")).thenReturn(false);
-
-        UpdatePasswordRequest request =
-                new UpdatePasswordRequest("wrong", "newPass", "newPass");
-
-        assertThrows(BadCredencialsException.class,
-                () -> userService.changePassword(request, user));
-    }
-
-    @Test
-    @DisplayName("Deve lançar erro se nova senha for igual")
-    void shouldThrowWhenNewPasswordIsSame() {
-        User user = mock(User.class);
-
-        when(user.getPassword()).thenReturn("hashed");
-
-        when(encoder.matches("old", "hashed")).thenReturn(true);
-        when(encoder.matches("same", "hashed")).thenReturn(true);
-
-        UpdatePasswordRequest request =
-                new UpdatePasswordRequest("old", "same", "same");
-
-        assertThrows(BadCredencialsException.class,
-                () -> userService.changePassword(request, user));
+            verify(userRepository, never()).save(any());
+        }
     }
 }
