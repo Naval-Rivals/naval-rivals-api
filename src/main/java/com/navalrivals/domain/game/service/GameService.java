@@ -28,6 +28,8 @@ public class GameService {
     private final GameResultRepository gameResultRepository;
     private final GameWebSocketService gameWebSocketService;
     private final TurnTimerService turnTimerService;
+    private final GameResultService gameResultService;
+    private final GameEventPublisher gameEventPublisher;
 
     public Game createGame(User player, GameMode gameMode) {
         var game = new Game(player, gameMode);
@@ -143,6 +145,51 @@ public class GameService {
     public Game findById(UUID gameId){
         return storage.findById(gameId)
                 .orElseThrow(() -> new NotFoundException("Partida não encontrada"));
+    }
+
+    /**
+     * Finaliza a partida por desistência/saída de um jogador durante IN_PROGRESS.
+     * Persiste o resultado, publica GAME_OVER, atualiza stats e remove da memória.
+     *
+     * @param gameId        ID da partida
+     * @param leavingPlayerId ID do jogador que está saindo (perdedor)
+     * @return true se a partida foi finalizada, false se já estava finalizada ou não está IN_PROGRESS
+     */
+    public boolean forfeitGame(UUID gameId, UUID leavingPlayerId) {
+        var game = storage.findById(gameId).orElse(null);
+        if (game == null) return false;
+
+        if (game.getStatus() != GameStatus.IN_PROGRESS) {
+            return false;
+        }
+
+        // Determina o vencedor (quem ficou)
+        UUID winnerId;
+        if (game.getPlayer1().getPlayerId().equals(leavingPlayerId)) {
+            winnerId = game.getPlayer2().getPlayerId();
+        } else {
+            winnerId = game.getPlayer1().getPlayerId();
+        }
+
+        // Finaliza o jogo
+        if (!game.finish(winnerId)) {
+            return false;
+        }
+
+        // Persiste resultado ANTES de publicar (frontend busca logo após GAME_OVER)
+        gameResultService.persistGameResult(game);
+
+        // Publica GAME_OVER
+        gameEventPublisher.publishGameOver(gameId, winnerId, leavingPlayerId, "OPPONENT_SURRENDERED");
+
+        // Atualiza stats dos jogadores de forma assíncrona
+        gameResultService.updatePlayerStatsAsync(winnerId, leavingPlayerId);
+
+        // Limpa timer e game da memória
+        turnTimerService.cancelTimer(gameId);
+        storage.remove(gameId);
+
+        return true;
     }
 
     public void removeGame(UUID gameId) {

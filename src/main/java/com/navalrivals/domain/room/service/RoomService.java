@@ -102,15 +102,21 @@ public class RoomService {
         roomWebSocketService.notifyPlayerLeft(room.getId(), user.getId(), user.getNickname());
 
         if (room.isHost(user.getId())) {
-            // Se a sala tem um jogo ativo, limpa da memória
             if (room.getGameId() != null) {
-                gameService.removeGame(room.getGameId());
+                // Tenta finalizar por desistência (persiste resultado se IN_PROGRESS)
+                if (!gameService.forfeitGame(room.getGameId(), user.getId())) {
+                    // Se não estava IN_PROGRESS (ex: PLACING_SHIPS), apenas remove da memória
+                    gameService.removeGame(room.getGameId());
+                }
             }
             roomRepository.delete(room);
         } else {
-            // Se a sala tem um jogo ativo, a sala deve ser encerrada (não pode ser reaberta)
             if (room.getGameId() != null) {
-                gameService.removeGame(room.getGameId());
+                // Tenta finalizar por desistência (persiste resultado se IN_PROGRESS)
+                if (!gameService.forfeitGame(room.getGameId(), user.getId())) {
+                    // Se não estava IN_PROGRESS (ex: PLACING_SHIPS), apenas remove da memória
+                    gameService.removeGame(room.getGameId());
+                }
                 roomRepository.delete(room);
             } else {
                 // Oponente saiu antes do jogo ser criado (sala ainda WAITING/FULL sem game) — apenas remove o oponente

@@ -240,8 +240,8 @@ class RoomServiceTest {
     }
 
     @Test
-    @DisplayName("Deve deletar sala e remover jogo quando host sai e tem jogo ativo")
-    void shouldDeleteRoomAndRemoveGameWhenHostLeavesWithActiveGame() {
+    @DisplayName("Deve deletar sala e finalizar jogo quando host sai e jogo está IN_PROGRESS")
+    void shouldDeleteRoomAndForfeitGameWhenHostLeavesWithActiveGame() {
         User host = createUser();
         Room room = new Room(host, "NR-ABCD", GameMode.CLASSIC);
         UUID roomId = UUID.randomUUID();
@@ -250,10 +250,12 @@ class RoomServiceTest {
         room.setGameId(gameId);
 
         when(roomRepository.findById(roomId)).thenReturn(Optional.of(room));
+        when(gameService.forfeitGame(gameId, host.getId())).thenReturn(true);
 
         roomService.leave(roomId, host);
 
-        verify(gameService).removeGame(gameId);
+        verify(gameService).forfeitGame(gameId, host.getId());
+        verify(gameService, never()).removeGame(any());
         verify(roomRepository).delete(room);
         verify(roomWebSocketService).notifyLobbyUpdated();
     }
@@ -281,8 +283,8 @@ class RoomServiceTest {
     }
 
     @Test
-    @DisplayName("Deve deletar sala quando oponente sai depois do jogo ser criado")
-    void shouldDeleteRoomWhenOpponentLeavesAfterGameCreated() {
+    @DisplayName("Deve deletar sala e finalizar jogo quando oponente sai e jogo está IN_PROGRESS")
+    void shouldDeleteRoomAndForfeitGameWhenOpponentLeavesAfterGameStarted() {
         User host = createUser();
         User opponent = createUser();
         Room room = new Room(host, "NR-ABCD", GameMode.CLASSIC);
@@ -293,10 +295,12 @@ class RoomServiceTest {
         room.setGameId(gameId);
 
         when(roomRepository.findById(roomId)).thenReturn(Optional.of(room));
+        when(gameService.forfeitGame(gameId, opponent.getId())).thenReturn(true);
 
         roomService.leave(roomId, opponent);
 
-        verify(gameService).removeGame(gameId);
+        verify(gameService).forfeitGame(gameId, opponent.getId());
+        verify(gameService, never()).removeGame(any());
         verify(roomRepository).delete(room);
         verify(roomWebSocketService).notifyPlayerLeft(roomId, opponent.getId(), opponent.getNickname());
         verify(roomWebSocketService).notifyLobbyUpdated();

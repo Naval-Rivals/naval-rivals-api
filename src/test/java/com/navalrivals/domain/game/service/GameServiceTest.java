@@ -45,6 +45,12 @@ class GameServiceTest {
     @Mock
     private TurnTimerService turnTimerService;
 
+    @Mock
+    private GameResultService gameResultService;
+
+    @Mock
+    private GameEventPublisher gameEventPublisher;
+
     @InjectMocks
     private GameService gameService;
 
@@ -456,6 +462,89 @@ class GameServiceTest {
         when(gameResultRepository.findById(gameId)).thenReturn(Optional.empty());
 
         assertThrows(NotFoundException.class, () -> gameService.getGameResult(gameId));
+    }
+
+    // ======================== forfeitGame ========================
+
+    @Test
+    @DisplayName("forfeitGame - deve finalizar jogo IN_PROGRESS, persistir resultado, publicar GAME_OVER e remover")
+    void forfeitGame_inProgress_shouldFinalizeAndPersist() {
+        User player1 = createUser();
+        User player2 = createUser();
+        Game game = new Game(player1, GameMode.CLASSIC);
+        game.join(player2);
+        UUID gameId = game.getId();
+
+        game.placeShips(player1.getId(), createValidFleet());
+        game.placeShips(player2.getId(), createValidFleetAlternate());
+        // Game agora está IN_PROGRESS
+
+        when(storage.findById(gameId)).thenReturn(Optional.of(game));
+
+        boolean result = gameService.forfeitGame(gameId, player2.getId());
+
+        assertTrue(result);
+        assertEquals(GameStatus.FINISHED, game.getStatus());
+        assertEquals(player1.getId(), game.getWinnerId());
+        verify(gameResultService).persistGameResult(game);
+        verify(gameEventPublisher).publishGameOver(gameId, player1.getId(), player2.getId(), "OPPONENT_SURRENDERED");
+        verify(gameResultService).updatePlayerStatsAsync(player1.getId(), player2.getId());
+        verify(turnTimerService).cancelTimer(gameId);
+        verify(storage).remove(gameId);
+    }
+
+    @Test
+    @DisplayName("forfeitGame - deve retornar false quando jogo não está IN_PROGRESS")
+    void forfeitGame_notInProgress_shouldReturnFalse() {
+        User player1 = createUser();
+        User player2 = createUser();
+        Game game = new Game(player1, GameMode.CLASSIC);
+        game.join(player2);
+        UUID gameId = game.getId();
+        // Game está PLACING_SHIPS (não IN_PROGRESS)
+
+        when(storage.findById(gameId)).thenReturn(Optional.of(game));
+
+        boolean result = gameService.forfeitGame(gameId, player2.getId());
+
+        assertFalse(result);
+        verify(gameResultService, never()).persistGameResult(any());
+        verify(gameEventPublisher, never()).publishGameOver(any(), any(), any(), any());
+        verify(storage, never()).remove(any());
+    }
+
+    @Test
+    @DisplayName("forfeitGame - deve retornar false quando jogo não encontrado")
+    void forfeitGame_gameNotFound_shouldReturnFalse() {
+        UUID gameId = UUID.randomUUID();
+
+        when(storage.findById(gameId)).thenReturn(Optional.empty());
+
+        boolean result = gameService.forfeitGame(gameId, UUID.randomUUID());
+
+        assertFalse(result);
+        verify(gameResultService, never()).persistGameResult(any());
+    }
+
+    @Test
+    @DisplayName("forfeitGame - deve retornar false quando jogo já foi finalizado")
+    void forfeitGame_alreadyFinished_shouldReturnFalse() {
+        User player1 = createUser();
+        User player2 = createUser();
+        Game game = new Game(player1, GameMode.CLASSIC);
+        game.join(player2);
+        UUID gameId = game.getId();
+
+        game.placeShips(player1.getId(), createValidFleet());
+        game.placeShips(player2.getId(), createValidFleetAlternate());
+        game.finish(player1.getId()); // Já finalizado
+
+        when(storage.findById(gameId)).thenReturn(Optional.of(game));
+
+        boolean result = gameService.forfeitGame(gameId, player2.getId());
+
+        assertFalse(result);
+        verify(gameResultService, never()).persistGameResult(any());
     }
 
     // ======================== removeGame ========================
