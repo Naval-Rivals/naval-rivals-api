@@ -71,6 +71,13 @@ public class GameDisconnectService {
     private final Map<String, PlayerSession> sessionMap = new ConcurrentHashMap<>();
 
     /**
+     * Mapeia playerId → sessionId ativo mais recente.
+     * Usado para detectar se um disconnect é de uma sessão obsoleta (F5/reload)
+     * quando uma nova sessão já foi registrada.
+     */
+    private final Map<UUID, String> activeSessionByPlayer = new ConcurrentHashMap<>();
+
+    /**
      * Mapeia playerId → ScheduledFuture do timeout de reconexão.
      * Se reconectar antes de expirar, cancela o future.
      */
@@ -82,12 +89,16 @@ public class GameDisconnectService {
      */
     public void registerSession(String sessionId, UUID gameId, UUID playerId) {
         sessionMap.put(sessionId, new PlayerSession(gameId, playerId));
+        activeSessionByPlayer.put(playerId, sessionId);
         log.debug("Sessão registrada: session={}, game={}, player={}", sessionId, gameId, playerId);
     }
 
     /**
      * Chamado quando uma sessão WebSocket desconecta (SessionDisconnectEvent).
      * Verifica se é um jogador em partida ativa e inicia o countdown de reconexão.
+     *
+     * IMPORTANTE: Se o jogador já reconectou com uma nova sessão (ex: F5/reload),
+     * o disconnect da sessão antiga é ignorado para evitar race condition.
      */
     public void handleDisconnect(String sessionId) {
         PlayerSession session = sessionMap.remove(sessionId);
@@ -95,6 +106,18 @@ public class GameDisconnectService {
 
         UUID gameId = session.gameId();
         UUID playerId = session.playerId();
+
+        // Se o jogador já tem uma sessão MAIS RECENTE ativa, esse disconnect
+        // é de uma sessão obsoleta (ex: F5 reload) — ignorar.
+        String currentActiveSession = activeSessionByPlayer.get(playerId);
+        if (currentActiveSession != null && !currentActiveSession.equals(sessionId)) {
+            log.info("Disconnect de sessão obsoleta ignorado: session={}, player={}, activeSession={}",
+                    sessionId, playerId, currentActiveSession);
+            return;
+        }
+
+        // Remove do activeSessionByPlayer pois o jogador realmente desconectou
+        activeSessionByPlayer.remove(playerId, sessionId);
 
         var gameOpt = gameStorage.findById(gameId);
         if (gameOpt.isEmpty()) return;
@@ -267,9 +290,14 @@ public class GameDisconnectService {
         var gameOpt = gameStorage.findById(gameId);
         if (gameOpt.isPresent()) {
             Game game = gameOpt.get();
-            cancelReconnectTimer(game.getPlayer1().getPlayerId());
+            UUID player1Id = game.getPlayer1().getPlayerId();
+            cancelReconnectTimer(player1Id);
+            activeSessionByPlayer.remove(player1Id);
+
             if (game.getPlayer2() != null) {
-                cancelReconnectTimer(game.getPlayer2().getPlayerId());
+                UUID player2Id = game.getPlayer2().getPlayerId();
+                cancelReconnectTimer(player2Id);
+                activeSessionByPlayer.remove(player2Id);
             }
         }
     }
