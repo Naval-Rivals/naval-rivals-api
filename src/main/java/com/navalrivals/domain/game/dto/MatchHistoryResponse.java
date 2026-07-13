@@ -17,7 +17,8 @@ public record MatchHistoryResponse(
         Long durationSeconds,
         PlayerGameStats myStats,
         PlayerGameStats opponentStats,
-        Instant finishedAt
+        Instant finishedAt,
+        String gameMode
 ) {
     public static MatchHistoryResponse from(GameResult result, UUID userId) {
         boolean isWinner = result.getWinner().getId().equals(userId);
@@ -42,7 +43,8 @@ public record MatchHistoryResponse(
                 result.getDurationSeconds(),
                 myStats,
                 opponentStats,
-                result.getFinishedAt()
+                result.getFinishedAt(),
+                result.getGameMode().toString()
         );
     }
 }
