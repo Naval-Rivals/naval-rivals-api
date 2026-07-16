@@ -27,6 +27,7 @@ import org.springframework.stereotype.Controller;
 
 import java.security.Principal;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -214,6 +215,7 @@ public class GameWebSocketController {
      *
      * O frontend DEVE chamar isso ao entrar no jogo (após se inscrever nos tópicos).
      * Se for uma reconexão (o jogador havia desconectado), o service trata automaticamente.
+     * Se o game já não existe (foi destruído por disconnect do oponente), envia GAME_NOT_FOUND.
      */
     @MessageMapping("/game/{gameId}/register")
     public void register(
@@ -223,6 +225,13 @@ public class GameWebSocketController {
     ) {
         User user = extractUser(principal);
         String sessionId = headerAccessor.getSessionId();
+
+        // Se o game já foi destruído (ex: oponente desconectou e timeout expirou antes deste player se registrar)
+        if (!gameService.exists(gameId)) {
+            messagingTemplate.convertAndSend("/topic/game/" + gameId + "/events",
+                    Map.of("event", "GAME_NOT_FOUND", "gameId", gameId, "reason", "OPPONENT_DISCONNECTED"));
+            return;
+        }
 
         // handleReconnect verifica se há desconexão pendente para esse player
         // Se sim, cancela timeout e retoma timer. Se não, apenas registra.

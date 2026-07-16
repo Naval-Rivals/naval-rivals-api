@@ -987,6 +987,8 @@ client.publish({
 
 This registers the WebSocket session for disconnect tracking. Without it, the server won't detect if you disconnect.
 
+**If the game no longer exists** (opponent disconnected and timeout expired before you registered), the server will immediately publish a `GAME_NOT_FOUND` event on `/topic/game/{gameId}/events`. The frontend should handle this by showing an error and navigating back.
+
 ---
 
 ## WebSocket Events
@@ -1279,6 +1281,29 @@ Published when the disconnected player comes back online within the 30-second wi
 ```
 
 **Frontend action:** Remove the "waiting" overlay. The turn timer resumes with the remaining time.
+
+---
+
+#### GAME_NOT_FOUND
+
+Published when a player sends `/app/game/{gameId}/register` but the game no longer exists in memory (already destroyed due to opponent disconnect timeout or other cleanup).
+
+```json
+{
+  "event": "GAME_NOT_FOUND",
+  "gameId": "660e8400-e29b-41d4-a716-446655440000",
+  "reason": "OPPONENT_DISCONNECTED"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| gameId | UUID | The game ID that was requested |
+| reason | String | `"OPPONENT_DISCONNECTED"` — the opponent left before the game could start |
+
+**When does this happen?** Race condition: the opponent disconnected and the 30-second reconnect timeout expired *before* this player connected and sent `/register`. The game was already cleaned up.
+
+**Frontend action:** Show "Oponente saiu da partida" message and navigate back to the lobby or room list.
 
 ---
 

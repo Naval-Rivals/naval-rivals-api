@@ -148,6 +148,13 @@ public class GameService {
     }
 
     /**
+     * Verifica se um game existe em memória (não foi destruído/removido).
+     */
+    public boolean exists(UUID gameId) {
+        return storage.findById(gameId).isPresent();
+    }
+
+    /**
      * Finaliza a partida por desistência/saída de um jogador durante IN_PROGRESS.
      * Persiste o resultado, publica GAME_OVER, atualiza stats e remove da memória.
      *
