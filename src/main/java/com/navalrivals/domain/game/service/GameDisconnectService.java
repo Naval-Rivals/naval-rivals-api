@@ -150,6 +150,45 @@ public class GameDisconnectService {
     }
 
     /**
+     * Trata desconexão de um jogador identificado por gameId + playerId.
+     * Usado quando o disconnect é detectado via room-register (RoomSessionService)
+     * e o jogador NUNCA registrou sessão no game (ex: host fechou aba antes de /app/game/{gameId}/register).
+     *
+     * Executa a mesma lógica do handleDisconnect(sessionId), mas sem depender do sessionMap.
+     */
+    public void handleDisconnectByPlayer(UUID gameId, UUID playerId) {
+        // Se já existe um timer de reconexão para esse jogador, não duplicar
+        if (reconnectTimers.containsKey(playerId)) {
+            log.debug("Timer de reconexão já existe para player={}, game={}, ignorando", playerId, gameId);
+            return;
+        }
+
+        var gameOpt = gameStorage.findById(gameId);
+        if (gameOpt.isEmpty()) return;
+
+        Game game = gameOpt.get();
+        if (game.getStatus() != GameStatus.IN_PROGRESS
+                && game.getStatus() != GameStatus.PLACING_SHIPS) {
+            return;
+        }
+
+        log.info("Jogador {} desconectou do jogo {} (detectado via room-register)", playerId, gameId);
+
+        // Pausa o timer de turno
+        turnTimerService.pauseTimer(gameId);
+
+        // Publica OPPONENT_DISCONNECTED
+        eventPublisher.publishOpponentDisconnected(gameId, playerId, reconnectTimeoutSeconds);
+
+        // Agenda timeout de reconexão (30s)
+        ScheduledFuture<?> future = scheduler.schedule(() -> {
+            handleReconnectTimeout(gameId, playerId);
+        }, reconnectTimeoutSeconds, TimeUnit.SECONDS);
+
+        reconnectTimers.put(playerId, future);
+    }
+
+    /**
      * Chamado quando um jogador reconecta (nova sessão WebSocket para o mesmo jogo).
      * Invocado pelo GameWebSocketController no /register.
      */

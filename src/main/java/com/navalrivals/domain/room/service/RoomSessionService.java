@@ -1,5 +1,6 @@
 package com.navalrivals.domain.room.service;
 
+import com.navalrivals.domain.game.service.GameDisconnectService;
 import com.navalrivals.domain.room.entity.Room;
 import com.navalrivals.domain.room.enums.RoomStatus;
 import com.navalrivals.domain.room.repository.RoomRepository;
@@ -26,6 +27,7 @@ public class RoomSessionService {
 
     private final RoomRepository roomRepository;
     private final LobbySSEService lobbySSEService;
+    private final GameDisconnectService gameDisconnectService;
 
     /**
      * Mapeia sessionId → roomId do host registrado naquela sessão.
@@ -61,6 +63,7 @@ public class RoomSessionService {
     /**
      * Chamado quando uma sessão WebSocket desconecta.
      * Se a sessão pertencia a um host de sala WAITING, deleta a sala.
+     * Se a sala já avançou (FULL) e tem um game associado, propaga o disconnect para o game.
      */
     @Transactional
     public void handleDisconnect(String sessionId) {
@@ -77,15 +80,22 @@ public class RoomSessionService {
 
         Room room = roomOpt.get();
 
-        // Só deleta se a sala ainda está WAITING (se já avançou para FULL/IN_PROGRESS, o GameDisconnectService cuida)
-        if (room.getStatus() != RoomStatus.WAITING) {
-            log.debug("Sala {} não está mais em WAITING (status={}), ignorando disconnect de host", roomId, room.getStatus());
+        if (room.getStatus() == RoomStatus.WAITING) {
+            // Sala ainda em WAITING — host desconectou antes de alguém entrar → deleta a sala
+            roomRepository.delete(room);
+            lobbySSEService.notifyLobbyUpdated();
+            log.info("Sala {} deletada por desconexão do host (session={})", roomId, sessionId);
             return;
         }
 
-        roomRepository.delete(room);
-        lobbySSEService.notifyLobbyUpdated();
-        log.info("Sala {} deletada por desconexão do host (session={})", roomId, sessionId);
+        // Sala não está mais em WAITING (FULL) — verificar se tem game associado
+        if (room.getGameId() != null) {
+            UUID gameId = room.getGameId();
+            UUID hostId = room.getHost().getId();
+            log.info("Host {} desconectou da sala {} que já tem game {}. Propagando disconnect para o game.",
+                    hostId, roomId, gameId);
+            gameDisconnectService.handleDisconnectByPlayer(gameId, hostId);
+        }
     }
 
     /**
