@@ -38,6 +38,8 @@ public class LobbySSEService {
     public void notifyLobbyUpdated(){
         List<SseEmitter> deadEmitters = new ArrayList<>();
 
+        log.info("[SSE OUT] /lobby/events → LOBBY_UPDATED | {} clientes conectados", emitters.size());
+
         for (SseEmitter emitter : emitters){
             try{
                 emitter.send(SseEmitter.event()

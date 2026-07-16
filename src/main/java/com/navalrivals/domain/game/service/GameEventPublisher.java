@@ -5,6 +5,7 @@ import com.navalrivals.domain.game.util.CellConverter;
 import com.navalrivals.domain.position.entity.Position;
 import com.navalrivals.domain.ship.entity.Ship;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
@@ -18,6 +19,7 @@ import java.util.UUID;
  * Cada método corresponde a um tipo de evento.
  * Todos usam SimpMessagingTemplate para enviar ao tópico STOMP.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class GameEventPublisher {
@@ -26,6 +28,7 @@ public class GameEventPublisher {
 
     private void publish(UUID gameId, String event, Map<String, Object> payload) {
         var gameEvent = new GameEvent(event, gameId, payload);
+        log.info("[WS OUT] /topic/game/{}/events → {} | payload={}", gameId, event, payload);
         messagingTemplate.convertAndSend("/topic/game/" + gameId + "/events", gameEvent);
     }
 
@@ -34,6 +37,7 @@ public class GameEventPublisher {
      */
     private void publishToUser(UUID gameId, UUID playerId, String event, Map<String, Object> payload) {
         var gameEvent = new GameEvent(event, gameId, payload);
+        log.info("[WS OUT] /user/{}/topic/game/{}/events → {} | payload={}", playerId, gameId, event, payload);
         messagingTemplate.convertAndSendToUser(
                 playerId.toString(),
                 "/topic/game/" + gameId + "/events",
