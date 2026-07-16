@@ -229,7 +229,7 @@ public class GameWebSocketController {
         // Se o game já foi destruído (ex: oponente desconectou e timeout expirou antes deste player se registrar)
         if (!gameService.exists(gameId)) {
             messagingTemplate.convertAndSend("/topic/game/" + gameId + "/events",
-                    Map.of("event", "GAME_NOT_FOUND", "gameId", gameId, "reason", "OPPONENT_DISCONNECTED"));
+                    (Object) Map.of("event", "GAME_NOT_FOUND", "gameId", gameId.toString(), "reason", "OPPONENT_DISCONNECTED"));
             return;
         }
 
