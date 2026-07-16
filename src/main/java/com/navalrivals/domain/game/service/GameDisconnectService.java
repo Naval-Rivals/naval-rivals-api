@@ -5,9 +5,11 @@ import com.navalrivals.domain.game.enums.GameStatus;
 import com.navalrivals.domain.game.storage.GameStorage;
 import com.navalrivals.domain.room.enums.RoomStatus;
 import com.navalrivals.domain.room.repository.RoomRepository;
+import com.navalrivals.domain.room.service.LobbySSEService;
 import com.navalrivals.domain.room.service.RoomWebSocketService;
 import com.navalrivals.domain.user.entity.User;
 import com.navalrivals.domain.user.repository.UserRepository;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Value;
@@ -28,6 +30,7 @@ import java.util.concurrent.*;
  */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class GameDisconnectService {
 
     private final int reconnectTimeoutSeconds;
@@ -39,6 +42,7 @@ public class GameDisconnectService {
     private final RoomRepository roomRepository;
     private final RoomWebSocketService roomWebSocketService;
     private final UserRepository userRepository;
+    private final LobbySSEService lobbySSEService;
 
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
 
@@ -51,7 +55,8 @@ public class GameDisconnectService {
             GameResultService gameResultService,
             RoomRepository roomRepository,
             RoomWebSocketService roomWebSocketService,
-            UserRepository userRepository
+            UserRepository userRepository,
+            LobbySSEService lobbySSEService
     ) {
         this.reconnectTimeoutSeconds = reconnectTimeoutSeconds;
         this.eventPublisher = eventPublisher;
@@ -62,6 +67,7 @@ public class GameDisconnectService {
         this.roomRepository = roomRepository;
         this.roomWebSocketService = roomWebSocketService;
         this.userRepository = userRepository;
+        this.lobbySSEService = lobbySSEService;
     }
 
     /**
@@ -229,7 +235,7 @@ public class GameDisconnectService {
 
             // Deleta a room — uma vez que o jogo foi criado, a sala não pode ser reaberta
             roomRepository.delete(room);
-            roomWebSocketService.notifyLobbyUpdated();
+            lobbySSEService.notifyLobbyUpdated();
         });
 
         // Remove o game da memória

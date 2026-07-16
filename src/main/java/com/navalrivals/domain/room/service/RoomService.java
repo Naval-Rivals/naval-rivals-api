@@ -28,6 +28,7 @@ public class RoomService {
     private final RoomWebSocketService roomWebSocketService;
     private final RoomSessionService roomSessionService;
     private final GameService gameService;
+    private final LobbySSEService lobbySSEService;
 
     private static final String CODE_CHARACTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     private static final int CODE_LENGTH = 4;
@@ -49,7 +50,7 @@ public class RoomService {
         String code = generateUniqueCode();
         var room = new Room(host, code, gameMode);
         roomRepository.save(room);
-        roomWebSocketService.notifyLobbyUpdated();
+        lobbySSEService.notifyLobbyUpdated();
         return new RoomResponse(room);
     }
 
@@ -79,7 +80,7 @@ public class RoomService {
 
         roomWebSocketService.notifyPlayerJoined(room.getId(), player.getId(), player.getNickname());
         roomWebSocketService.notifyRoomReady(room.getId(), player.getId(), player.getNickname(), game.getId());
-        roomWebSocketService.notifyLobbyUpdated();
+        lobbySSEService.notifyLobbyUpdated();
 
         return new RoomResponse(room);
     }
@@ -125,7 +126,7 @@ public class RoomService {
             }
         }
 
-        roomWebSocketService.notifyLobbyUpdated();
+        lobbySSEService.notifyLobbyUpdated();
     }
 
     public List<RoomResponse> listWaitingRooms() {
