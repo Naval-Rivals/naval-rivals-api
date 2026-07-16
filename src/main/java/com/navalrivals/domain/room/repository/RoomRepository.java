@@ -24,4 +24,8 @@ public interface RoomRepository extends JpaRepository<Room, UUID> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT r FROM Room r WHERE r.code = :code")
     Optional<Room> findByCodeForUpdate(@Param("code") String code);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT r FROM Room r WHERE r.id = :id")
+    Optional<Room> findByIdForUpdate(@Param("id") UUID id);
 }

@@ -72,7 +72,7 @@ public class RoomSessionService {
             return; // Sessão não era de um host registrado em sala
         }
 
-        var roomOpt = roomRepository.findById(roomId);
+        var roomOpt = roomRepository.findByIdForUpdate(roomId);
         if (roomOpt.isEmpty()) {
             log.debug("Sala {} já foi removida, ignorando disconnect", roomId);
             return;
@@ -80,22 +80,21 @@ public class RoomSessionService {
 
         Room room = roomOpt.get();
 
-        if (room.getStatus() == RoomStatus.WAITING) {
-            // Sala ainda em WAITING — host desconectou antes de alguém entrar → deleta a sala
-            roomRepository.delete(room);
-            lobbySSEService.notifyLobbyUpdated();
-            log.info("Sala {} deletada por desconexão do host (session={})", roomId, sessionId);
-            return;
-        }
-
-        // Sala não está mais em WAITING (FULL) — verificar se tem game associado
+        // Se a sala já tem gameId, significa que um guest já entrou (join ocorreu).
+        // Nesse caso, propagar disconnect para o game — independente do status no banco.
         if (room.getGameId() != null) {
             UUID gameId = room.getGameId();
             UUID hostId = room.getHost().getId();
             log.info("Host {} desconectou da sala {} que já tem game {}. Propagando disconnect para o game.",
                     hostId, roomId, gameId);
             gameDisconnectService.handleDisconnectByPlayer(gameId, hostId);
+            return;
         }
+
+        // Sala sem game — host desconectou antes de alguém entrar → deleta a sala
+        roomRepository.delete(room);
+        lobbySSEService.notifyLobbyUpdated();
+        log.info("Sala {} deletada por desconexão do host (session={})", roomId, sessionId);
     }
 
     /**
