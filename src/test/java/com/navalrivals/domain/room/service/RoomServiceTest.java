@@ -43,6 +43,9 @@ class RoomServiceTest {
     @Mock
     private GameService gameService;
 
+    @Mock
+    private LobbySSEService lobbySSEService;
+
     @InjectMocks
     private RoomService roomService;
 
@@ -67,7 +70,6 @@ class RoomServiceTest {
         assertNotNull(response.code());
 
         verify(roomRepository).save(any(Room.class));
-        verify(roomWebSocketService).notifyLobbyUpdated();
     }
 
     @Test
@@ -155,7 +157,6 @@ class RoomServiceTest {
         verify(gameService).joinGame(gameId, player);
         verify(roomWebSocketService).notifyPlayerJoined(room.getId(), player.getId(), player.getNickname());
         verify(roomWebSocketService).notifyRoomReady(room.getId(), player.getId(), player.getNickname(), gameId);
-        verify(roomWebSocketService).notifyLobbyUpdated();
     }
 
     @Test
@@ -236,7 +237,6 @@ class RoomServiceTest {
 
         verify(roomWebSocketService).notifyPlayerLeft(roomId, host.getId(), host.getNickname());
         verify(roomRepository).delete(room);
-        verify(roomWebSocketService).notifyLobbyUpdated();
     }
 
     @Test
@@ -257,7 +257,6 @@ class RoomServiceTest {
         verify(gameService).forfeitGame(gameId, host.getId());
         verify(gameService, never()).removeGame(any());
         verify(roomRepository).delete(room);
-        verify(roomWebSocketService).notifyLobbyUpdated();
     }
 
     @Test
@@ -279,7 +278,6 @@ class RoomServiceTest {
         assertEquals(RoomStatus.WAITING, room.getStatus());
         verify(roomRepository, never()).delete(any());
         verify(roomWebSocketService).notifyPlayerLeft(roomId, opponent.getId(), opponent.getNickname());
-        verify(roomWebSocketService).notifyLobbyUpdated();
     }
 
     @Test
@@ -303,7 +301,6 @@ class RoomServiceTest {
         verify(gameService, never()).removeGame(any());
         verify(roomRepository).delete(room);
         verify(roomWebSocketService).notifyPlayerLeft(roomId, opponent.getId(), opponent.getNickname());
-        verify(roomWebSocketService).notifyLobbyUpdated();
     }
 
     @Test

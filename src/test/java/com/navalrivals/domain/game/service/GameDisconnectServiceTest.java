@@ -5,6 +5,7 @@ import com.navalrivals.domain.game.enums.GameMode;
 import com.navalrivals.domain.game.enums.GameStatus;
 import com.navalrivals.domain.game.storage.GameStorage;
 import com.navalrivals.domain.room.repository.RoomRepository;
+import com.navalrivals.domain.room.service.LobbySSEService;
 import com.navalrivals.domain.room.service.RoomWebSocketService;
 import com.navalrivals.domain.user.entity.User;
 import com.navalrivals.domain.user.repository.UserRepository;
@@ -48,6 +49,9 @@ class GameDisconnectServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private LobbySSEService lobbySSEService;
+
     private GameDisconnectService disconnectService;
 
     private UUID gameId;
@@ -60,7 +64,7 @@ class GameDisconnectServiceTest {
         disconnectService = new GameDisconnectService(
                 30, eventPublisher, gameStorage, turnTimerService,
                 gameService, gameResultService, roomRepository,
-                roomWebSocketService, userRepository
+                roomWebSocketService, userRepository, lobbySSEService
         );
 
         player1Id = UUID.randomUUID();
@@ -173,7 +177,7 @@ class GameDisconnectServiceTest {
         disconnectService = new GameDisconnectService(
                 1, eventPublisher, gameStorage, turnTimerService,
                 gameService, gameResultService, roomRepository,
-                roomWebSocketService, userRepository
+                roomWebSocketService, userRepository, lobbySSEService
         );
 
         disconnectService.registerSession("session-1", gameId, player1Id);
@@ -198,7 +202,7 @@ class GameDisconnectServiceTest {
         disconnectService = new GameDisconnectService(
                 1, eventPublisher, gameStorage, turnTimerService,
                 gameService, gameResultService, roomRepository,
-                roomWebSocketService, userRepository
+                roomWebSocketService, userRepository, lobbySSEService
         );
 
         disconnectService.registerSession("session-1", gameId, player1Id);
@@ -247,7 +251,7 @@ class GameDisconnectServiceTest {
         disconnectService = new GameDisconnectService(
                 2, eventPublisher, gameStorage, turnTimerService,
                 gameService, gameResultService, roomRepository,
-                roomWebSocketService, userRepository
+                roomWebSocketService, userRepository, lobbySSEService
         );
 
         disconnectService.registerSession("session-1", gameId, player1Id);

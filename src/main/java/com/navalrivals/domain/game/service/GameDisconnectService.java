@@ -30,7 +30,6 @@ import java.util.concurrent.*;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class GameDisconnectService {
 
     private final int reconnectTimeoutSeconds;
