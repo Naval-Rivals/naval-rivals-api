@@ -31,7 +31,7 @@ public class RoomCleanupScheduler {
 
     private final RoomRepository roomRepository;
     private final RoomSessionService roomSessionService;
-    private final RoomWebSocketService roomWebSocketService;
+    private final LobbySSEService lobbySSEService;
 
     @Scheduled(fixedRate = 60_000) // A cada 1 minuto
     @Transactional
@@ -50,7 +50,7 @@ public class RoomCleanupScheduler {
                     room.getId(), room.getCode(), room.getCreatedAt());
         }
 
-        roomWebSocketService.notifyLobbyUpdated();
+        lobbySSEService.notifyLobbyUpdated();
         log.info("Cleanup: {} salas WAITING expiradas removidas", expiredRooms.size());
     }
 }

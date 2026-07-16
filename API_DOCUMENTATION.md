@@ -12,16 +12,17 @@
    - [Rooms](#rooms)
    - [Games](#games)
    - [Ranking](#ranking)
-6. [WebSocket Connection](#websocket-connection)
-7. [WebSocket Events](#websocket-events)
-   - [Lobby Events](#lobby-events)
+6. [Server-Sent Events (SSE)](#server-sent-events-sse)
+   - [Lobby Events (SSE)](#lobby-events-sse)
+7. [WebSocket Connection](#websocket-connection)
+8. [WebSocket Events](#websocket-events)
    - [Room Events](#room-events)
    - [Placement Events](#placement-events)
    - [Game Events](#game-events)
    - [Tactical Mode Events](#tactical-mode-events)
-8. [Complete Game Flow](#complete-game-flow)
-9. [Torpedo Mechanic](#torpedo-mechanic)
-10. [Tactical Mode](#tactical-mode)
+9. [Complete Game Flow](#complete-game-flow)
+10. [Torpedo Mechanic](#torpedo-mechanic)
+11. [Tactical Mode](#tactical-mode)
 
 ---
 
@@ -568,7 +569,7 @@ List all rooms currently waiting for an opponent (lobby).
 - Ordered by creation date (newest first)
 - Includes the host's own rooms (frontend can filter if needed)
 - Use `POST /rooms/join` with the room's `code` to join a room from the lobby
-- Subscribe to `/topic/lobby` for real-time updates (see [Lobby Events](#lobby-events))
+- Connect to `GET /lobby/events` (SSE) for real-time updates (see [Lobby Events (SSE)](#lobby-events-sse))
 
 **Notes:**
 - Returns an empty array `[]` if no rooms are waiting
@@ -864,6 +865,76 @@ Get the global ranking, sorted by victories.
 
 ---
 
+## Server-Sent Events (SSE)
+
+### Lobby Events (SSE)
+
+**Endpoint:** `GET /lobby/events`
+
+**Content-Type:** `text/event-stream`
+
+**Authentication:** Not required (public endpoint)
+
+Connect to this endpoint using the browser's native `EventSource` API to receive real-time lobby updates. Events are simple signals — the frontend should re-fetch the room list via `GET /rooms` when receiving them.
+
+---
+
+#### Connection Example
+
+```javascript
+const eventSource = new EventSource('http://localhost:8080/lobby/events');
+
+eventSource.addEventListener('LOBBY_UPDATED', (event) => {
+  // Re-fetch the room list
+  fetchRooms();
+});
+
+eventSource.onerror = (error) => {
+  // EventSource reconnects automatically — no manual logic needed
+  console.warn('SSE connection lost, reconnecting...');
+};
+
+// Cleanup when leaving the lobby screen
+eventSource.close();
+```
+
+---
+
+#### LOBBY_UPDATED
+
+Sent when the lobby state changes (room created, room filled, or room deleted).
+
+**Event name:** `LOBBY_UPDATED`
+
+**Data:**
+```json
+{"event":"LOBBY_UPDATED"}
+```
+
+**Triggers:**
+- A new room is created (enters the lobby)
+- A player joins a room (room leaves the lobby)
+- A host leaves/deletes a room (room leaves the lobby)
+- An opponent leaves a full room (room returns to the lobby)
+- Expired rooms are cleaned up by the server
+
+**Frontend action:** Re-fetch the room list by calling `GET /rooms`.
+
+---
+
+#### Behavior Notes
+
+| Property | Value |
+|----------|-------|
+| **Timeout** | 5 minutes (server closes the connection) |
+| **Reconnection** | Automatic (native `EventSource` behavior) |
+| **Protocol** | HTTP (no WebSocket upgrade needed) |
+| **CORS** | Uses the same CORS config as the REST API |
+
+> **Why SSE instead of WebSocket?** The lobby notification is unidirectional (server → client) and carries no payload beyond a signal. SSE is lighter, uses standard HTTP, passes through any proxy/CDN, and reconnects automatically without client-side logic.
+
+---
+
 ## WebSocket Connection
 
 ### Connection Info
@@ -919,34 +990,6 @@ This registers the WebSocket session for disconnect tracking. Without it, the se
 ---
 
 ## WebSocket Events
-
-### Lobby Events
-
-**Topic:** `/topic/lobby`
-
-Subscribe to this topic when displaying the room lobby (list of available rooms). Events are simple signals — the frontend should re-fetch the room list via `GET /rooms` when receiving them.
-
----
-
-#### LOBBY_UPDATED
-
-Published when the lobby state changes (room created, room filled, or room deleted).
-
-```json
-{
-  "event": "LOBBY_UPDATED"
-}
-```
-
-**Triggers:**
-- A new room is created (enters the lobby)
-- A player joins a room (room leaves the lobby)
-- A host leaves/deletes a room (room leaves the lobby)
-- An opponent leaves a full room (room returns to the lobby)
-
-**Frontend action:** Re-fetch the room list by calling `GET /rooms`.
-
----
 
 ### Room Events
 

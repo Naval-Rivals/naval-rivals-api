@@ -25,7 +25,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class RoomSessionService {
 
     private final RoomRepository roomRepository;
-    private final RoomWebSocketService roomWebSocketService;
+    private final LobbySSEService lobbySSEService;
 
     /**
      * Mapeia sessionId → roomId do host registrado naquela sessão.
@@ -84,7 +84,7 @@ public class RoomSessionService {
         }
 
         roomRepository.delete(room);
-        roomWebSocketService.notifyLobbyUpdated();
+        lobbySSEService.notifyLobbyUpdated();
         log.info("Sala {} deletada por desconexão do host (session={})", roomId, sessionId);
     }
 

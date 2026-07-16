@@ -49,13 +49,4 @@ public class RoomWebSocketService {
         messagingTemplate.convertAndSend("/topic/room/" + roomId, message);
     }
 
-    /**
-     * Publica evento LOBBY_UPDATED — sinal para clientes inscritos no lobby
-     * re-buscarem a lista de salas via GET /rooms.
-     *
-     * Tópico: /topic/lobby
-     */
-    public void notifyLobbyUpdated() {
-        messagingTemplate.convertAndSend("/topic/lobby", (Object) Map.of("event", "LOBBY_UPDATED"));
-    }
 }
