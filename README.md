@@ -1,6 +1,6 @@
 # ⚓ Naval Rivals — API Backend
 
-API RESTful e WebSocket do jogo **Naval Rivals**, uma releitura moderna do clássico Batalha Naval com modo tático, sistema de habilidades especiais e ranking competitivo.
+API RESTful, WebSocket e SSE do jogo **Naval Rivals**, uma releitura moderna do clássico Batalha Naval com modo tático, sistema de habilidades especiais e ranking competitivo.
 
 ---
 
@@ -27,7 +27,7 @@ API RESTful e WebSocket do jogo **Naval Rivals**, uma releitura moderna do clás
 | **Banco de Dados**        | PostgreSQL                       | —        |
 | **Migrations**            | Flyway                           | —        |
 | **Segurança**             | Spring Security + JWT (auth0)    | 4.5.1    |
-| **Comunicação Real-time** | WebSocket STOMP (Spring)         | —        |
+| **Comunicação Real-time** | WebSocket STOMP + SSE (Spring) | —        |
 | **Validação**             | Bean Validation (Jakarta)        | —        |
 | **Documentação API**      | Springdoc OpenAPI (Swagger UI)   | 3.0.2    |
 | **Boilerplate**           | Lombok                           | —        |
@@ -46,7 +46,7 @@ A aplicação segue uma **arquitetura Domain-Driven** com separação clara entr
 │               Spring Boot (Stateless / JWT)                 │
 ├─────────────────────────────────────────────────────────────┤
 │                       Config                                │
-│       WebSocket (STOMP) │ CORS │ Async                      │
+│       WebSocket (STOMP) │ SSE │ CORS │ Async                │
 ├──────────────┬──────────────────────────────────────────────┤
 │   Domain     │  Módulos de negócio autocontidos             │
 │              │  user │ room │ game │ ranking │ stats        │
@@ -66,10 +66,13 @@ A aplicação segue uma **arquitetura Domain-Driven** com separação clara entr
 ```
 Cliente ──── REST (HTTP) ────► Controllers ────► Services ────► Repositories
    │                                                │
+   ├──── SSE (HTTP) ─────────► /lobby/events ───────┘
+   │         (lobby updates, unidirecional)
+   │
    └──── WebSocket (STOMP) ──► WS Controllers ──────┘
               /ws endpoint
-         /topic/* (broadcast)
-         /queue/* (privado)
+         /topic/room/* (sala)
+         /topic/game/* (partida)
          /app/* (client → server)
 ```
 
@@ -81,7 +84,10 @@ Cliente ──── REST (HTTP) ────► Controllers ────► Ser
 Versão LTS mais recente do Java, com Spring Boot garantindo produtividade e um ecossistema maduro para APIs REST e WebSocket no mesmo projeto.
 
 ### WebSocket STOMP
-O jogo depende de comunicação em tempo real — turnos, ataques e status de sala precisam refletir instantaneamente para os dois jogadores. STOMP se integra nativamente ao Spring, sem exigir infraestrutura extra.
+O jogo depende de comunicação bidirecional em tempo real — turnos, ataques, status de sala e eventos de partida precisam refletir instantaneamente para os dois jogadores. STOMP se integra nativamente ao Spring, sem exigir infraestrutura extra.
+
+### SSE (Server-Sent Events)
+Usado para notificações unidirecionais do lobby (atualizações de lista de salas). Por ser HTTP puro, é mais leve que WebSocket, passa por qualquer proxy/CDN, reconecta automaticamente via `EventSource` nativo do browser, e reduz custos operacionais eliminando conexões WebSocket desnecessárias.
 
 ### JWT Stateless
 Autenticação sem sessão no servidor, o que facilita escalar horizontalmente. O mesmo token valida tanto requisições REST quanto conexões WebSocket.
@@ -134,7 +140,7 @@ src/main/java/com/navalrivals/
 
 1. **Registro/Login** — autenticação JWT com endpoints REST
 2. **Criar/Entrar Sala** — via código de sala (REST + WebSocket)
-3. **Aguardando Oponente** — notificação em tempo real via STOMP
+3. **Aguardando Oponente** — notificação em tempo real via SSE (lobby) e STOMP (sala)
 4. **Posicionamento de Navios** — validação server-side de regras
 5. **Batalha** — turnos alternados com timer (60s), ataques e habilidades
 6. **Resultado** — persistência de estatísticas e atualização de ranking
@@ -220,7 +226,7 @@ SPRING_PROFILES_ACTIVE=dev
 
 ## Documentação da API
 
-A documentação completa de todos os endpoints (REST e WebSocket) está disponível em:
+A documentação completa de todos os endpoints (REST, SSE e WebSocket) está disponível em:
 
 📄 **[API_DOCUMENTATION.md](./API_DOCUMENTATION.md)**
 
