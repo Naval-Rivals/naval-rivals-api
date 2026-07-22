@@ -34,3 +34,9 @@ server:
 logging:
   level:
     com.navalrivals: INFO
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, prometheus
