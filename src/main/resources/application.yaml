@@ -37,6 +37,17 @@ logging:
 
 management:
   endpoints:
+    enable-by-default: false
     web:
       exposure:
-        include: health, info, prometheus
+        include: health, info, prometheus, metrics
+  endpoint:
+    health:
+      enable: true
+      show-details: always
+    info:
+      enable: true
+    prometheus:
+      enable: true
+    metrics:
+      enable: true
