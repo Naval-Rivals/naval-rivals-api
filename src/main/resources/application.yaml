@@ -1,6 +1,6 @@
 spring:
   application:
-    name: navalrivals
+    name: navalrivals-api
   datasource:
     url: ${SPRING_DATASOURCE_URL}
     username: ${SPRING_DATASOURCE_USERNAME}
@@ -36,6 +36,9 @@ logging:
     com.navalrivals: INFO
 
 management:
+  metrics:
+    tags:
+      application: ${spring.application.name}
   endpoints:
     enable-by-default: false
     web:
