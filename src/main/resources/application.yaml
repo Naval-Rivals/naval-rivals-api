@@ -36,6 +36,19 @@ logging:
     com.navalrivals: INFO
 
 management:
+  opentelemetry:
+    tracing:
+      sampling:
+        probability: 1.0
+      export:
+        otlp:
+          endpoint: http://localhost:4318/v1/traces
+    metrics:
+      export:
+        enabled: false
+  tracing:
+    sampling:
+      probability: 1.0
   metrics:
     tags:
       application: ${spring.application.name}
@@ -46,11 +59,11 @@ management:
         include: health, info, prometheus, metrics
   endpoint:
     health:
-      enable: true
+      enabled: true
       show-details: always
     info:
-      enable: true
+      enabled: true
     prometheus:
-      enable: true
+      enabled: true
     metrics:
-      enable: true
+      enabled: true
