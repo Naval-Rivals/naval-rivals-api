@@ -28,4 +28,13 @@ services:
       - 3000:3000
     networks:
       - aw-network
+  jaeger:
+    image: jaegertracing/jaeger:latest
+    ports:
+      - "16686:16686"
+      - "4318:4318"
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    networks:
+      - aw-network
 

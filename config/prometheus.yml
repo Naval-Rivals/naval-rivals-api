@@ -11,11 +11,11 @@ scrape_configs:
           application: "api-naval-rivals"
           env: "production"
 
-#  - job_name: "api-naval-rivals-local"
-#    scheme: http
-#    metrics_path: "/actuator/prometheus"
-#    static_configs:
-#      - targets: ["172.21.48.1:8080"]
-#        labels:
-#          application: "navalrivals-api"
-#          env: "local"
+  - job_name: "api-naval-rivals-local"
+    scheme: http
+    metrics_path: "/actuator/prometheus"
+    static_configs:
+      - targets: ["172.21.48.1:8080"]
+        labels:
+          application: "navalrivals-api"
+          env: "local"
