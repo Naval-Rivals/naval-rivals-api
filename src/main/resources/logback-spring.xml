@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <!-- Appender console sempre disponível (independente de profile) -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>
+                %d{HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg [traceId=%X{traceId}]%n
+            </pattern>
+        </encoder>
+    </appender>
+
+    <!-- Root padrão: console sempre ativo -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+
+    <!-- Profile dev: adiciona envio pro Loki -->
+    <springProfile name="dev">
+        <appender name="LOKI" class="com.github.loki4j.logback.Loki4jAppender">
+            <http>
+                <url>http://localhost:3100/loki/api/v1/push</url>
+            </http>
+            <labels>
+                service=navalrivals-api
+                level=%level
+                host=${HOSTNAME}
+            </labels>
+            <structuredMetadata>
+                thread=%thread
+                logger=%logger
+                *=%%mdc
+            </structuredMetadata>
+            <message>
+                <pattern>[%thread] %logger{36} - %msg%n</pattern>
+            </message>
+        </appender>
+
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="LOKI"/>
+        </root>
+    </springProfile>
+
+    <!-- Profile prod: JSON estruturado pra stdout -->
+    <springProfile name="prod">
+        <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                <includeMdcKeyName>traceId</includeMdcKeyName>
+                <includeMdcKeyName>spanId</includeMdcKeyName>
+                <includeMdcKeyName>userId</includeMdcKeyName>
+                <includeMdcKeyName>gameId</includeMdcKeyName>
+                <includeMdcKeyName>roomId</includeMdcKeyName>
+            </encoder>
+        </appender>
+        <root level="INFO">
+            <appender-ref ref="JSON_CONSOLE"/>
+        </root>
+    </springProfile>
+
+</configuration>

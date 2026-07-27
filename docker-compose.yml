@@ -19,7 +19,8 @@ services:
     networks:
       - aw-network
     ports:
-      - 9090:9090
+      - "9090:9090"
+
   grafana:
     image: grafana/grafana:latest
     volumes:
@@ -28,6 +29,7 @@ services:
       - 3000:3000
     networks:
       - aw-network
+
   jaeger:
     image: jaegertracing/jaeger:latest
     ports:
@@ -38,3 +40,11 @@ services:
     networks:
       - aw-network
 
+  loki:
+    image: grafana/loki:3.5.0
+    command:
+      - -config.file=/etc/loki/local-config.yaml
+    ports:
+      - "3100:3100"
+    networks:
+      - aw-network

@@ -1,5 +1,6 @@
 package com.navalrivals.infra.security.filter;
 
+import com.navalrivals.domain.user.entity.User;
 import com.navalrivals.domain.user.repository.UserRepository;
 import com.navalrivals.infra.exception.exceptions.NotFoundException;
 import com.navalrivals.infra.security.service.TokenService;
@@ -8,6 +9,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.MDC;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -32,6 +34,8 @@ public class SecurityFilter extends OncePerRequestFilter {
                 var subject = tokenService.validateToken(token);
                 var user = userRepository.findByEmail(subject)
                         .orElseThrow(() -> new NotFoundException("Usuário não encontrado"));
+                var userLog = (User) user;
+                MDC.put("userId", userLog.getId().toString());
                 var authorization = new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
 
                 SecurityContextHolder.getContext().setAuthentication(authorization);
