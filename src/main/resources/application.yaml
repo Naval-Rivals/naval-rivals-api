@@ -48,7 +48,7 @@ management:
         enabled: false
   tracing:
     sampling:
-      probability: 1.0
+      probability: ${TRACING_PROBABILITY}
   metrics:
     tags:
       application: ${spring.application.name}
