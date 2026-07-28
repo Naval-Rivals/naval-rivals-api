@@ -18,6 +18,8 @@ import com.navalrivals.domain.ship.entity.Ship;
 import com.navalrivals.domain.shot.entity.Shot;
 import com.navalrivals.domain.user.entity.User;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
@@ -30,14 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * Controller WebSocket para ações de jogo em tempo real.
- *
- * Endpoints STOMP:
- * - /app/game/{gameId}/attack   → processa ataque e publica resultado
- * - /app/game/{gameId}/ability  → usa habilidade (modo tático)
- * - /app/game/{gameId}/register → registra sessão para tracking de desconexão
- */
+@Slf4j
 @Controller
 @RequiredArgsConstructor
 public class GameWebSocketController {
@@ -49,19 +44,6 @@ public class GameWebSocketController {
     private final TurnTimerService turnTimerService;
     private final GameDisconnectService disconnectService;
 
-    /**
-     * Processa um ataque enviado pelo frontend.
-     *
-     * Fluxo:
-     * 1. Extrai User do Principal (JWT validado no CONNECT)
-     * 2. Converte célula "C4" → Position(2, 3)
-     * 3. Executa shoot (valida turno, status, etc.)
-     * 4. Publica ATTACK_RESULT no /topic/game/{gameId}/events
-     * 5. Se afundou navio → publica SHIP_SUNK
-     * 6. Se game over → publica GAME_OVER e cancela timer
-     * 7. Se continua → publica TURN_CHANGE e reinicia timer
-     * 8. Publica AttackResponse no /topic/game/{gameId}/attack (compatibilidade)
-     */
     @MessageMapping("/game/{gameId}/attack")
     public void attack(
             @DestinationVariable UUID gameId,
@@ -70,11 +52,15 @@ public class GameWebSocketController {
             SimpMessageHeaderAccessor headerAccessor
     ) {
         User user = extractUser(principal);
-        Position position = CellConverter.toPosition(request.cell());
-        String attackType = request.type() != null ? request.type() : "NORMAL";
+        MDC.put("gameId", gameId.toString());
+        MDC.put("userId", user.getId().toString());
+        try {
+            Position position = CellConverter.toPosition(request.cell());
+            String attackType = request.type() != null ? request.type() : "NORMAL";
+
+            log.info("[WS IN] /app/game/{}/attack — playerId={}, cell={}, type={}", gameId, user.getId(), request.cell(), attackType);
 
         // Cancela o timer ANTES de executar o ataque para evitar race condition
-        // com handleTimeout() que poderia trocar o turno simultaneamente
         turnTimerService.cancelTimer(gameId);
 
         // Executa o ataque
@@ -112,12 +98,13 @@ public class GameWebSocketController {
         String shipType = sunk ? sunkShip.getType().name() : null;
 
         if (sunk) {
+            log.info("[GAME] Navio afundado — gameId={}, opponentId={}, shipType={}", gameId, opponentId, shipType);
             eventPublisher.publishShipSunk(gameId, opponentId, sunkShip);
         }
 
         boolean gameOver = game.getStatus() == GameStatus.FINISHED;
 
-        // Publica AttackResponse PRIMEIRO (frontend vê resultado do tiro imediatamente)
+        // Publica AttackResponse
         AttackResponse response = new AttackResponse(
                 gameId,
                 user.getId(),
@@ -133,33 +120,23 @@ public class GameWebSocketController {
         messagingTemplate.convertAndSend("/topic/game/" + gameId + "/attack", response);
 
         if (gameOver) {
-            // Persiste GameResult ANTES de publicar GAME_OVER
-            // (garante que o GET /games/{id}/result funcione quando o frontend buscar)
+            log.info("[GAME] Partida finalizada por ALL_SHIPS_SUNK — gameId={}, winnerId={}", gameId, game.getWinnerId());
             gameResultService.persistGameResult(game);
-
-            // Publica GAME_OVER (frontend navega para tela de resultado e faz GET)
             eventPublisher.publishGameOver(gameId, game.getWinnerId(), opponentId, "ALL_SHIPS_SUNK");
             turnTimerService.cancelTimer(gameId);
-
-            // Atualiza stats dos jogadores de forma assíncrona (não bloqueia)
             gameResultService.updatePlayerStatsAsync(game.getWinnerId(), opponentId);
             disconnectService.cleanupGame(gameId);
             gameService.removeGame(gameId);
         } else {
-            // Publica TURN_CHANGE e reinicia timer para o próximo turno
             eventPublisher.publishTurnChange(gameId, game.getCurrentTurn(), turnTimerService.getTurnTimeout());
             turnTimerService.startTimer(gameId);
         }
+        } finally {
+            MDC.remove("gameId");
+            MDC.remove("userId");
+        }
     }
 
-    /**
-     * Usa uma habilidade no modo tático.
-     *
-     * Habilidades disponíveis:
-     * - SHIELD: ativa escudo (não consome turno)
-     * - RADAR: revela bloco 3x3 (consome turno)
-     * - EMP_NAVAL: desativa habilidades do oponente por 2 turnos (consome turno)
-     */
     @MessageMapping("/game/{gameId}/ability")
     public void ability(
             @DestinationVariable UUID gameId,
@@ -167,9 +144,13 @@ public class GameWebSocketController {
             Principal principal
     ) {
         User user = extractUser(principal);
+        MDC.put("gameId", gameId.toString());
+        MDC.put("userId", user.getId().toString());
+        try {
+            AbilityType abilityType = request.ability();
+            Position target = request.cell() != null ? CellConverter.toPosition(request.cell()) : null;
 
-        AbilityType abilityType = request.ability();
-        Position target = request.cell() != null ? CellConverter.toPosition(request.cell()) : null;
+            log.info("[WS IN] /app/game/{}/ability — playerId={}, ability={}, cell={}", gameId, user.getId(), abilityType, request.cell());
 
         // Para habilidades que consomem turno (RADAR, EMP), cancela timer antes
         boolean consumesTurn = (abilityType == AbilityType.RADAR || abilityType == AbilityType.EMP_NAVAL);
@@ -197,26 +178,21 @@ public class GameWebSocketController {
                         .map(CellConverter::toCell)
                         .toList();
                 eventPublisher.publishRadarResult(gameId, user.getId(), request.cell(), revealedCells);
-                // Radar consome turno → publica TURN_CHANGE e reinicia timer
                 eventPublisher.publishTurnChange(gameId, game.getCurrentTurn(), turnTimerService.getTurnTimeout());
                 turnTimerService.startTimer(gameId);
             }
             case EMP_NAVAL -> {
                 eventPublisher.publishEmpActivated(gameId, user.getId(), opponentId, 2);
-                // EMP consome turno → publica TURN_CHANGE e reinicia timer
                 eventPublisher.publishTurnChange(gameId, game.getCurrentTurn(), turnTimerService.getTurnTimeout());
                 turnTimerService.startTimer(gameId);
             }
         }
+        } finally {
+            MDC.remove("gameId");
+            MDC.remove("userId");
+        }
     }
 
-    /**
-     * Registra a sessão do jogador para tracking de desconexão.
-     *
-     * O frontend DEVE chamar isso ao entrar no jogo (após se inscrever nos tópicos).
-     * Se for uma reconexão (o jogador havia desconectado), o service trata automaticamente.
-     * Se o game já não existe (foi destruído por disconnect do oponente), envia GAME_NOT_FOUND.
-     */
     @MessageMapping("/game/{gameId}/register")
     public void register(
             @DestinationVariable UUID gameId,
@@ -225,17 +201,23 @@ public class GameWebSocketController {
     ) {
         User user = extractUser(principal);
         String sessionId = headerAccessor.getSessionId();
+        MDC.put("gameId", gameId.toString());
+        MDC.put("userId", user.getId().toString());
+        try {
+            log.info("[WS IN] /app/game/{}/register — playerId={}, sessionId={}", gameId, user.getId(), sessionId);
 
-        // Se o game já foi destruído (ex: oponente desconectou e timeout expirou antes deste player se registrar)
-        if (!gameService.exists(gameId)) {
-            messagingTemplate.convertAndSend("/topic/game/" + gameId + "/events",
-                    (Object) Map.of("event", "GAME_NOT_FOUND", "gameId", gameId.toString(), "reason", "OPPONENT_DISCONNECTED"));
-            return;
+            if (!gameService.exists(gameId)) {
+                log.warn("[GAME] Register em game inexistente — gameId={}, playerId={}", gameId, user.getId());
+                messagingTemplate.convertAndSend("/topic/game/" + gameId + "/events",
+                        (Object) Map.of("event", "GAME_NOT_FOUND", "gameId", gameId.toString(), "reason", "OPPONENT_DISCONNECTED"));
+                return;
+            }
+
+            disconnectService.handleReconnect(sessionId, gameId, user.getId());
+        } finally {
+            MDC.remove("gameId");
+            MDC.remove("userId");
         }
-
-        // handleReconnect verifica se há desconexão pendente para esse player
-        // Se sim, cancela timeout e retoma timer. Se não, apenas registra.
-        disconnectService.handleReconnect(sessionId, gameId, user.getId());
     }
 
     private User extractUser(Principal principal) {

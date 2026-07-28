@@ -4,6 +4,7 @@ import io.micrometer.observation.ObservationPredicate;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.server.observation.ServerRequestObservationContext;
+import org.springframework.security.config.observation.SecurityObservationSettings;
 import org.springframework.util.AntPathMatcher;
 import org.springframework.util.PathMatcher;
 
@@ -21,5 +22,12 @@ public class ObservabilityConfig {
             }
             return true;
         };
+    }
+
+    @Bean
+    public SecurityObservationSettings securityObservationSettings(){
+        return SecurityObservationSettings.withDefaults()
+                .shouldObserveAuthorizations(false)
+                .build();
     }
 }

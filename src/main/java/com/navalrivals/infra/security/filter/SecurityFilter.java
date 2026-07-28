@@ -9,6 +9,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -17,6 +18,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class SecurityFilter extends OncePerRequestFilter {
@@ -39,14 +41,18 @@ public class SecurityFilter extends OncePerRequestFilter {
                 var authorization = new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
 
                 SecurityContextHolder.getContext().setAuthentication(authorization);
+                log.debug("[AUTH] Token válido para userId={} — {} {}", userLog.getId(), request.getMethod(), request.getRequestURI());
             }
             filterChain.doFilter(request, response);
         } catch (Exception e){
+            log.warn("[AUTH] Token inválido ou expirado — {} {} — motivo: {}", request.getMethod(), request.getRequestURI(), e.getMessage());
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             response.setContentType("application/json");
             response.getWriter().write("""
                 {"message" : "Token inválido ou expirado"}
             """);
+        } finally {
+            MDC.remove("userId");
         }
     }
 

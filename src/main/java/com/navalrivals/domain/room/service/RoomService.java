@@ -13,6 +13,7 @@ import com.navalrivals.infra.exception.exceptions.NotFoundException;
 import com.navalrivals.infra.exception.exceptions.PlayerWithoutPermissionException;
 import com.navalrivals.infra.exception.exceptions.RoomFullException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,6 +21,7 @@ import java.security.SecureRandom;
 import java.util.List;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class RoomService {
@@ -40,6 +42,7 @@ public class RoomService {
         // Se o host já tem uma sala WAITING, deleta a anterior
         roomRepository.findByHostIdAndStatus(host.getId(), RoomStatus.WAITING)
                 .ifPresent(existingRoom -> {
+                    log.info("[ROOM] Sala anterior deletada — roomId={}, hostId={}", existingRoom.getId(), host.getId());
                     roomSessionService.unregisterRoom(existingRoom.getId());
                     roomRepository.delete(existingRoom);
                 });
@@ -51,6 +54,7 @@ public class RoomService {
         var room = new Room(host, code, gameMode);
         roomRepository.save(room);
         lobbySSEService.notifyLobbyUpdated();
+        log.info("[ROOM] Sala criada — roomId={}, code={}, hostId={}, mode={}", room.getId(), code, host.getId(), gameMode);
         return new RoomResponse(room);
     }
 
@@ -82,6 +86,7 @@ public class RoomService {
         roomWebSocketService.notifyRoomReady(room.getId(), player.getId(), player.getNickname(), game.getId());
         lobbySSEService.notifyLobbyUpdated();
 
+        log.info("[ROOM] Jogador entrou na sala — roomId={}, playerId={}, code={}, gameId={}", room.getId(), player.getId(), room.getCode(), game.getId());
         return new RoomResponse(room);
     }
 
@@ -100,29 +105,29 @@ public class RoomService {
             throw new PlayerWithoutPermissionException("Jogador não pertence a essa sala");
         }
 
+        log.info("[ROOM] Jogador saindo da sala — roomId={}, playerId={}, isHost={}", roomId, user.getId(), room.isHost(user.getId()));
+
         roomWebSocketService.notifyPlayerLeft(room.getId(), user.getId(), user.getNickname());
 
         if (room.isHost(user.getId())) {
             if (room.getGameId() != null) {
-                // Tenta finalizar por desistência (persiste resultado se IN_PROGRESS)
                 if (!gameService.forfeitGame(room.getGameId(), user.getId())) {
-                    // Se não estava IN_PROGRESS (ex: PLACING_SHIPS), apenas remove da memória
                     gameService.removeGame(room.getGameId());
                 }
             }
             roomRepository.delete(room);
+            log.info("[ROOM] Sala deletada (host saiu) — roomId={}", roomId);
         } else {
             if (room.getGameId() != null) {
-                // Tenta finalizar por desistência (persiste resultado se IN_PROGRESS)
                 if (!gameService.forfeitGame(room.getGameId(), user.getId())) {
-                    // Se não estava IN_PROGRESS (ex: PLACING_SHIPS), apenas remove da memória
                     gameService.removeGame(room.getGameId());
                 }
                 roomRepository.delete(room);
+                log.info("[ROOM] Sala deletada (oponente saiu com game ativo) — roomId={}", roomId);
             } else {
-                // Oponente saiu antes do jogo ser criado (sala ainda WAITING/FULL sem game) — apenas remove o oponente
                 room.setOpponent(null);
                 room.setStatus(RoomStatus.WAITING);
+                log.info("[ROOM] Oponente saiu (sala voltou a WAITING) — roomId={}", roomId);
             }
         }
 

@@ -15,11 +15,13 @@ import com.navalrivals.domain.user.entity.User;
 import com.navalrivals.infra.exception.exceptions.NotFoundException;
 import com.navalrivals.infra.exception.exceptions.PlayerWithoutPermissionException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class GameService {
@@ -34,6 +36,7 @@ public class GameService {
     public Game createGame(User player, GameMode gameMode) {
         var game = new Game(player, gameMode);
         storage.save(game);
+        log.info("[GAME] Partida criada — gameId={}, hostId={}, mode={}", game.getId(), player.getId(), gameMode);
         return game;
     }
 
@@ -41,6 +44,7 @@ public class GameService {
         var game = storage.findById(gameId)
                 .orElseThrow(() -> new NotFoundException("Partida não encontrada"));
         game.join(player);
+        log.info("[GAME] Jogador entrou na partida — gameId={}, playerId={}", gameId, player.getId());
         return game;
     }
 
@@ -52,8 +56,10 @@ public class GameService {
         }
 
         game.placeShips(player.getId(), ships);
+        log.info("[GAME] Navios posicionados — gameId={}, playerId={}, shipsCount={}", gameId, player.getId(), ships.size());
 
         if (game.getStatus() == GameStatus.IN_PROGRESS){
+            log.info("[GAME] Ambos posicionaram, partida iniciada — gameId={}, firstTurn={}", gameId, game.getCurrentTurn());
             gameWebSocketService.notifyGameStarted(gameId, player.getId(), game.getCurrentTurn());
             turnTimerService.startTimer(gameId);
         }else{
@@ -71,6 +77,8 @@ public class GameService {
         }
 
         Shot shot = game.shoot(player.getId(), positionShot, attackType);
+        log.info("[GAME] Ataque executado — gameId={}, playerId={}, pos=({},{}), type={}, hit={}",
+                gameId, player.getId(), positionShot.getRow(), positionShot.getCol(), attackType, shot.isHit());
 
         return shot;
     }
@@ -87,7 +95,11 @@ public class GameService {
             throw new PlayerWithoutPermissionException("Jogador não pertence a essa partida");
         }
 
-        return game.useAbility(player.getId(), ability, target);
+        List<Position> result = game.useAbility(player.getId(), ability, target);
+        log.info("[GAME] Habilidade usada — gameId={}, playerId={}, ability={}, target={}",
+                gameId, player.getId(), ability, target != null ? "(" + target.getRow() + "," + target.getCol() + ")" : "null");
+
+        return result;
     }
 
     public GameResultResponse getGameResult(UUID gameId) {
@@ -102,6 +114,8 @@ public class GameService {
         if (!game.hasPlayer(player.getId())) {
             throw new PlayerWithoutPermissionException("Jogador não pertence a essa partida");
         }
+
+        log.debug("[GAME] Estado consultado — gameId={}, playerId={}, status={}", gameId, player.getId(), game.getStatus());
 
         var myBoard = game.getBoardOf(player.getId());
         var opponentBoard = game.getOpponentBoardOf(player.getId());
@@ -157,10 +171,6 @@ public class GameService {
     /**
      * Finaliza a partida por desistência/saída de um jogador durante IN_PROGRESS.
      * Persiste o resultado, publica GAME_OVER, atualiza stats e remove da memória.
-     *
-     * @param gameId        ID da partida
-     * @param leavingPlayerId ID do jogador que está saindo (perdedor)
-     * @return true se a partida foi finalizada, false se já estava finalizada ou não está IN_PROGRESS
      */
     public boolean forfeitGame(UUID gameId, UUID leavingPlayerId) {
         var game = storage.findById(gameId).orElse(null);
@@ -183,6 +193,8 @@ public class GameService {
             return false;
         }
 
+        log.info("[GAME] Forfeit — gameId={}, leavingPlayerId={}, winnerId={}", gameId, leavingPlayerId, winnerId);
+
         // Persiste resultado ANTES de publicar (frontend busca logo após GAME_OVER)
         gameResultService.persistGameResult(game);
 
@@ -200,6 +212,7 @@ public class GameService {
     }
 
     public void removeGame(UUID gameId) {
+        log.debug("[GAME] Removendo partida da memória — gameId={}", gameId);
         storage.remove(gameId);
     }
 }
