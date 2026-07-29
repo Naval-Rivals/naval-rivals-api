@@ -16,11 +16,11 @@ import java.util.UUID;
 public class Stats {
 
     @Id
-    @GeneratedValue
     private UUID id;
 
     @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false, unique = true)
+    @MapsId
+    @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
     @Column(nullable = false)
