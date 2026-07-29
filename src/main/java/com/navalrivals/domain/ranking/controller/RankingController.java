@@ -1,5 +1,6 @@
 package com.navalrivals.domain.ranking.controller;
 
+import com.navalrivals.domain.ranking.dto.PageResponse;
 import com.navalrivals.domain.ranking.dto.RankingResponse;
 import com.navalrivals.domain.ranking.service.RankingService;
 import lombok.RequiredArgsConstructor;
@@ -19,8 +20,8 @@ public class RankingController {
     private final RankingService rankingService;
 
     @GetMapping
-    public ResponseEntity<Page<RankingResponse>> getAll(@PageableDefault(size = 20) Pageable pageable){
+    public ResponseEntity<PageResponse<RankingResponse>> getAll(@PageableDefault(size = 20) Pageable pageable){
         var response = rankingService.get(pageable);
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(new PageResponse<>(response));
     }
 }

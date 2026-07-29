@@ -5,6 +5,14 @@ spring:
     url: ${SPRING_DATASOURCE_URL}
     username: ${SPRING_DATASOURCE_USERNAME}
     password: ${SPRING_DATASOURCE_PASSWORD}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      max-lifetime: 600000        # 10 minutos
+      keepalive-time: 120000      # 2 minutos
+      connection-timeout: 20000   # Timeout de 20s
+      idle-timeout: 300000        # 5 minutos ocioso
+      validation-timeout: 5000    # 5s
   flyway:
     enabled: true
 
