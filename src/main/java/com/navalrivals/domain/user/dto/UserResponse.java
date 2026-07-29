@@ -8,11 +8,12 @@ import java.util.UUID;
 public record UserResponse(
         UUID id,
         String nickname,
-        String email,
-        StatsResponse stats
+        String email
+//        StatsResponse stats
 ) {
     public UserResponse(User user) {
-        this(user.getId(), user.getNickname(), user.getEmail(),
-             user.getStats() != null ? new StatsResponse(user.getStats()) : null);
+        this(user.getId(), user.getNickname(), user.getEmail()
+//             user.getStats() != null ? new StatsResponse(user.getStats()) : null
+             );
     }
 }

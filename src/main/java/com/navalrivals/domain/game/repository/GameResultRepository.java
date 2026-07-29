@@ -11,6 +11,12 @@ import java.util.UUID;
 
 public interface GameResultRepository extends JpaRepository<GameResult, UUID> {
 
-    @Query("SELECT gr FROM GameResult gr WHERE gr.winner.id = :userId OR gr.loser.id = :userId ORDER BY gr.finishedAt DESC")
+    @Query(value = "SELECT gr FROM GameResult gr " +
+            "JOIN FETCH gr.winner " +
+            "JOIN FETCH gr.loser " +
+            "WHERE gr.winner.id = :userId OR gr.loser.id = :userId " +
+            "ORDER BY gr.finishedAt DESC",
+            countQuery = "SELECT COUNT(gr) FROM GameResult gr " +
+                    "WHERE gr.winner.id = :userId OR gr.loser.id = :userId")
     Page<GameResult> findByUserId(@Param("userId") UUID userId, Pageable pageable);
 }

@@ -82,6 +82,7 @@ public class UserService {
         }
     }
 
+    @Transactional(readOnly = true)
     public UserResponse getById(UUID id){
         var user = userRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Usuário não encontrado"));

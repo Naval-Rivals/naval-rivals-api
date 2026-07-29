@@ -32,11 +32,11 @@ public class GameResult {
     @Column(name = "game_mode", nullable = false, length = 10)
     private GameMode gameMode;
 
-    @ManyToOne(fetch = FetchType.EAGER)
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "winner_id")
     private User winner;
 
-    @ManyToOne(fetch = FetchType.EAGER)
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "loser_id")
     private User loser;
 
