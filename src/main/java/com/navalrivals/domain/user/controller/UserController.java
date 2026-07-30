@@ -2,6 +2,7 @@ package com.navalrivals.domain.user.controller;
 
 import com.navalrivals.domain.game.dto.MatchHistoryResponse;
 import com.navalrivals.domain.game.repository.GameResultRepository;
+import com.navalrivals.domain.user.dto.NicknameResponse;
 import com.navalrivals.domain.user.dto.UpdateNicknameRequest;
 import com.navalrivals.domain.user.dto.UpdatePasswordRequest;
 import com.navalrivals.domain.user.dto.UserResponse;
@@ -50,7 +51,7 @@ public class UserController {
     }
 
     @PatchMapping("/me/nickname")
-    public ResponseEntity<UserResponse> changeNickname(
+    public ResponseEntity<NicknameResponse> changeNickname(
             @RequestBody @Valid UpdateNicknameRequest requestBody,
             @AuthenticationPrincipal User user
     ){

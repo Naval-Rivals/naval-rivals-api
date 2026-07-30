@@ -50,7 +50,7 @@ management:
         probability: 1.0
       export:
         otlp:
-          endpoint: http://localhost:4318/v1/traces
+          endpoint: ${OPENTELEMETRY_TRACING_ENDPOINT}
     metrics:
       export:
         enabled: false

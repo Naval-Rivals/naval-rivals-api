@@ -5,7 +5,9 @@ import com.navalrivals.domain.user.entity.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.security.core.userdetails.UserDetails;
 
 import java.util.Optional;
@@ -16,6 +18,10 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     boolean existsByEmail(String email);
     boolean existsByNickname(String nickname);
     Optional<UserDetails> findByNickname(String nickname);
+
+    @Modifying
+    @Query("UPDATE User u SET u.nickname = :nickname WHERE u.id = :id")
+    void updateNickname(@Param("id") UUID id, @Param("nickname") String nickname);
 
     @Query(value = """
             SELECT

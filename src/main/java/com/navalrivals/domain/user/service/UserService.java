@@ -90,19 +90,17 @@ public class UserService {
     }
 
     @Transactional
-    public UserResponse changeNickname(UpdateNicknameRequest data, User user){
+    public NicknameResponse changeNickname(UpdateNicknameRequest data, User user){
 
         if (userRepository.existsByNickname(data.nickname())){
             log.warn("[USER] Alteração de nickname falhou — nickname já em uso: {}, userId={}", data.nickname(), user.getId());
             throw new UserAlreadyExistsException("Já existe um usuário com esse apelido");
         }
 
-        var managedUser = userRepository.findById(user.getId())
-                .orElseThrow();
-        var oldNickname = managedUser.getNickname();
-        managedUser.setNickname(data.nickname());
-        log.info("[USER] Nickname alterado — userId={}, de '{}' para '{}'", user.getId(), oldNickname, data.nickname());
-        return new UserResponse(managedUser);
+        userRepository.updateNickname(user.getId(), data.nickname());
+
+        log.info("[USER] Nickname alterado — userId={}, de '{}' para '{}'", user.getId(), user.getNickname(), data.nickname());
+        return new NicknameResponse(data.nickname());
     }
 
     @Transactional
