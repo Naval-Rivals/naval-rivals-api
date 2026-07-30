@@ -6,16 +6,18 @@ import com.navalrivals.domain.ship.validator.ShipPlacementValidator;
 import com.navalrivals.domain.shot.entity.Shot;
 import com.navalrivals.domain.user.entity.User;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
 @Getter
+@NoArgsConstructor
 public class Board {
 
-    private final UUID playerId;
-    private final List<Shot> shots;
+    private UUID playerId;
+    private List<Shot> shots;
     private List<Ship> ships;
     private boolean ready;
 

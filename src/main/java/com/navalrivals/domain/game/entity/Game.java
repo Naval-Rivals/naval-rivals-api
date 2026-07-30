@@ -11,6 +11,7 @@ import com.navalrivals.domain.user.entity.User;
 import com.navalrivals.infra.exception.exceptions.MatchStatusException;
 import com.navalrivals.infra.exception.exceptions.PlayerWithoutPermissionException;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 import java.time.Instant;
 import java.util.List;
@@ -18,16 +19,17 @@ import java.util.Random;
 import java.util.UUID;
 
 @Getter
+@NoArgsConstructor
 public class Game {
 
-    private final UUID id;
-    private final Board player1;
+    private UUID id;
+    private Board player1;
     private Board player2;
     private UUID currentTurn;
     private GameStatus status;
     private UUID winnerId;
-    private final Instant createdAt;
-    private final GameMode gameMode;
+    private Instant createdAt;
+    private GameMode gameMode;
     private Instant lastActivityAt;
 
     public Game(User player1, GameMode gameMode) {

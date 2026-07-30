@@ -2,10 +2,12 @@ package com.navalrivals.domain.position.entity;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 import java.util.Objects;
 
 @AllArgsConstructor
+@NoArgsConstructor
 @Getter
 public class Position {
     private int row;
