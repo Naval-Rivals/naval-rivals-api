@@ -38,7 +38,7 @@ game:
     abandoned-threshold-minutes: 15
     inactive-in-progress-threshold-minutes: 10
     finished-threshold-minutes: 2
-    interval-ms: 120000
+    interval-ms: 300000
 
 server:
   servlet:

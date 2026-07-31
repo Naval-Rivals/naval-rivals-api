@@ -156,6 +156,7 @@ public class TurnTimerService {
 
         // Passa o turno
         game.forceSwapTurn();
+        storage.save(game);
 
         UUID nextTurn = game.getCurrentTurn();
 

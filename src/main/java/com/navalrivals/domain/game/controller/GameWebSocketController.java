@@ -64,10 +64,10 @@ public class GameWebSocketController {
         turnTimerService.cancelTimer(gameId);
 
         // Executa o ataque
-        Shot shot = gameService.shoot(gameId, user, position, attackType);
+        var result = gameService.shoot(gameId, user, position, attackType);
+        Game game = result.game();
+        Shot shot = result.shot();
 
-        // Busca estado atualizado do game
-        Game game = gameService.findById(gameId);
 
         // Determina o oponente
         UUID opponentId = game.getPlayer1().getPlayerId().equals(user.getId())
@@ -159,10 +159,12 @@ public class GameWebSocketController {
         }
 
         // Executa a habilidade
-        List<Position> result = gameService.useAbility(gameId, user, abilityType, target);
+        var result = gameService.useAbility(gameId, user, abilityType, target);
+        Game game = result.game();
+        List<Position> positions = result.positions();
 
         // Busca estado atualizado
-        Game game = gameService.findById(gameId);
+//        Game game = gameService.findById(gameId);
         UUID opponentId = game.getPlayer1().getPlayerId().equals(user.getId())
                 ? game.getPlayer2().getPlayerId()
                 : game.getPlayer1().getPlayerId();
@@ -174,7 +176,7 @@ public class GameWebSocketController {
                 eventPublisher.publishShieldActivated(gameId, user.getId(), myBoard.getShieldCharges());
             }
             case RADAR -> {
-                List<String> revealedCells = result.stream()
+                List<String> revealedCells = positions.stream()
                         .map(CellConverter::toCell)
                         .toList();
                 eventPublisher.publishRadarResult(gameId, user.getId(), request.cell(), revealedCells);
