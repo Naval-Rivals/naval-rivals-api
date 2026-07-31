@@ -48,3 +48,11 @@ services:
       - "3100:3100"
     networks:
       - aw-network
+
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+    networks:
+      - aw-network
+    restart: always

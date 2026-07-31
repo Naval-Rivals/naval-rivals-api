@@ -1,21 +1,27 @@
 package com.navalrivals.domain.board.entity;
 
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.navalrivals.domain.position.entity.Position;
 import com.navalrivals.domain.ship.entity.Ship;
 import com.navalrivals.domain.ship.validator.ShipPlacementValidator;
 import com.navalrivals.domain.shot.entity.Shot;
 import com.navalrivals.domain.user.entity.User;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
 @Getter
+@Setter
+@NoArgsConstructor
+@JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
 public class Board {
 
-    private final UUID playerId;
-    private final List<Shot> shots;
+    private UUID playerId;
+    private List<Shot> shots;
     private List<Ship> ships;
     private boolean ready;
 

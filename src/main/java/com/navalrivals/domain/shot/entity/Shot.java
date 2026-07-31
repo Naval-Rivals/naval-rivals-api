@@ -1,13 +1,19 @@
 package com.navalrivals.domain.shot.entity;
 
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.navalrivals.domain.position.entity.Position;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 @Getter
+@Setter
+@NoArgsConstructor
+@JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
 public class Shot {
-    private final Position position;
-    private final boolean hit;
-    private final BlockedBy blockedBy;
+    private Position position;
+    private boolean hit;
+    private BlockedBy blockedBy;
 
     public Shot(Position position, boolean hit) {
         this.position = position;

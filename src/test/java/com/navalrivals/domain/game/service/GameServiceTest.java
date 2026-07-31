@@ -227,7 +227,8 @@ class GameServiceTest {
                 ? new Position(5, 0)  // player2 ships start at row 5
                 : new Position(0, 0); // player1 ships start at row 0
 
-        Shot result = gameService.shoot(gameId, attacker, target, "NORMAL");
+        var shootResult = gameService.shoot(gameId, attacker, target, "NORMAL");
+        Shot result = shootResult.shot();
 
         assertTrue(result.isHit());
     }
@@ -251,7 +252,8 @@ class GameServiceTest {
         // Posição sem navios (row 9, col 9 — não há navio em nenhuma frota ali)
         Position emptyPosition = new Position(9, 9);
 
-        Shot result = gameService.shoot(gameId, attacker, emptyPosition, "NORMAL");
+        var shootResult = gameService.shoot(gameId, attacker, emptyPosition, "NORMAL");
+        Shot result = shootResult.shot();
 
         assertFalse(result.isHit());
         // Turno deve ter mudado
@@ -279,7 +281,8 @@ class GameServiceTest {
                 ? new Position(9, 0)  // player2 destroyer at (9,0),(9,1)
                 : new Position(4, 0); // player1 destroyer at (4,0),(4,1)
 
-        Shot result = gameService.shoot(gameId, attacker, target, "TORPEDO");
+        var shootResult = gameService.shoot(gameId, attacker, target, "TORPEDO");
+        Shot result = shootResult.shot();
 
         assertTrue(result.isHit());
     }
@@ -334,7 +337,8 @@ class GameServiceTest {
         UUID currentTurn = game.getCurrentTurn();
         User attacker = currentTurn.equals(player1.getId()) ? player1 : player2;
 
-        List<Position> result = gameService.useAbility(gameId, attacker, AbilityType.SHIELD, null);
+        var abilityResult = gameService.useAbility(gameId, attacker, AbilityType.SHIELD, null);
+        List<Position> result = abilityResult.positions();
 
         assertTrue(result.isEmpty());
         // Turno não deve mudar (SHIELD não consome turno)
@@ -364,7 +368,8 @@ class GameServiceTest {
                 ? new Position(5, 1)  // perto dos navios do player2
                 : new Position(0, 1); // perto dos navios do player1
 
-        List<Position> result = gameService.useAbility(gameId, attacker, AbilityType.RADAR, radarTarget);
+        var abilityResult = gameService.useAbility(gameId, attacker, AbilityType.RADAR, radarTarget);
+        List<Position> result = abilityResult.positions();
 
         assertNotNull(result);
         assertFalse(result.isEmpty());
@@ -390,7 +395,8 @@ class GameServiceTest {
         User attacker = currentTurn.equals(player1.getId()) ? player1 : player2;
         UUID opponentId = currentTurn.equals(player1.getId()) ? player2.getId() : player1.getId();
 
-        List<Position> result = gameService.useAbility(gameId, attacker, AbilityType.EMP_NAVAL, null);
+        var abilityResult = gameService.useAbility(gameId, attacker, AbilityType.EMP_NAVAL, null);
+        List<Position> result = abilityResult.positions();
 
         assertTrue(result.isEmpty());
         // Turno deve mudar (EMP consome turno)
