@@ -80,14 +80,11 @@ public class RoomSessionService {
 
         Room room = roomOpt.get();
 
-        // Se a sala já tem gameId, significa que um guest já entrou (join ocorreu).
-        // Nesse caso, propagar disconnect para o game — independente do status no banco.
+        // Se a sala já tem gameId, o jogador está migrando para a tela de game.
+        // O GameDisconnectService trata a desconexão real via WebSocketDisconnectListener.
         if (room.getGameId() != null) {
-            UUID gameId = room.getGameId();
-            UUID hostId = room.getHost().getId();
-            log.info("Host {} desconectou da sala {} que já tem game {}. Propagando disconnect para o game.",
-                    hostId, roomId, gameId);
-            gameDisconnectService.handleDisconnectByPlayer(gameId, hostId);
+            log.debug("Sala {} já tem game {}, ignorando disconnect do room-register (migração normal)",
+                    roomId, room.getGameId());
             return;
         }
 
