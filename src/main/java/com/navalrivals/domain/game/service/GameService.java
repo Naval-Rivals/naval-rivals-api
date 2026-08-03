@@ -44,6 +44,7 @@ public class GameService {
         var game = storage.findById(gameId)
                 .orElseThrow(() -> new NotFoundException("Partida não encontrada"));
         game.join(player);
+        storage.save(game);
         log.info("[GAME] Jogador entrou na partida — gameId={}, playerId={}", gameId, player.getId());
         return game;
     }
@@ -56,6 +57,7 @@ public class GameService {
         }
 
         game.placeShips(player.getId(), ships);
+        storage.save(game);
         log.info("[GAME] Navios posicionados — gameId={}, playerId={}, shipsCount={}", gameId, player.getId(), ships.size());
 
         if (game.getStatus() == GameStatus.IN_PROGRESS){
@@ -68,7 +70,9 @@ public class GameService {
         return game;
     }
 
-    public Shot shoot(UUID gameId, User player, Position positionShot, String attackType) {
+    public record ShootResult(Game game, Shot shot){}
+
+    public ShootResult shoot(UUID gameId, User player, Position positionShot, String attackType) {
         var game = storage.findById(gameId)
                 .orElseThrow(() -> new NotFoundException("Partida não encontrada"));
 
@@ -77,17 +81,19 @@ public class GameService {
         }
 
         Shot shot = game.shoot(player.getId(), positionShot, attackType);
+        storage.save(game);
         log.info("[GAME] Ataque executado — gameId={}, playerId={}, pos=({},{}), type={}, hit={}",
                 gameId, player.getId(), positionShot.getRow(), positionShot.getCol(), attackType, shot.isHit());
 
-        return shot;
+        return new ShootResult(game, shot);
     }
 
+    public record AbilityResult(List<Position> positions, Game game){};
     /**
      * Usa uma habilidade no modo tático.
      * Delega para Game.useAbility() que valida regras e executa.
      */
-    public List<Position> useAbility(UUID gameId, User player, AbilityType ability, Position target) {
+    public AbilityResult useAbility(UUID gameId, User player, AbilityType ability, Position target) {
         var game = storage.findById(gameId)
                 .orElseThrow(() -> new NotFoundException("Partida não encontrada"));
 
@@ -96,10 +102,11 @@ public class GameService {
         }
 
         List<Position> result = game.useAbility(player.getId(), ability, target);
+        storage.save(game);
         log.info("[GAME] Habilidade usada — gameId={}, playerId={}, ability={}, target={}",
                 gameId, player.getId(), ability, target != null ? "(" + target.getRow() + "," + target.getCol() + ")" : "null");
 
-        return result;
+        return new AbilityResult(result, game);
     }
 
     public GameResultResponse getGameResult(UUID gameId) {

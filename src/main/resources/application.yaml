@@ -15,6 +15,15 @@ spring:
       validation-timeout: 5000    # 5s
   flyway:
     enabled: true
+  cache:
+    type: redis
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+      password: ${REDIS_PASSWORD}
+      ssl:
+        enabled: true
 
 api:
   security:
@@ -30,7 +39,7 @@ game:
     abandoned-threshold-minutes: 15
     inactive-in-progress-threshold-minutes: 10
     finished-threshold-minutes: 2
-    interval-ms: 120000
+    interval-ms: 300000
 
 server:
   servlet:

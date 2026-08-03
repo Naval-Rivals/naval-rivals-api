@@ -1,5 +1,6 @@
 package com.navalrivals.domain.game.entity;
 
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.navalrivals.domain.board.entity.Board;
 import com.navalrivals.domain.game.enums.AbilityType;
 import com.navalrivals.domain.game.enums.GameMode;
@@ -11,6 +12,8 @@ import com.navalrivals.domain.user.entity.User;
 import com.navalrivals.infra.exception.exceptions.MatchStatusException;
 import com.navalrivals.infra.exception.exceptions.PlayerWithoutPermissionException;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.time.Instant;
 import java.util.List;
@@ -18,16 +21,19 @@ import java.util.Random;
 import java.util.UUID;
 
 @Getter
+@Setter
+@NoArgsConstructor
+@JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
 public class Game {
 
-    private final UUID id;
-    private final Board player1;
+    private UUID id;
+    private Board player1;
     private Board player2;
     private UUID currentTurn;
     private GameStatus status;
     private UUID winnerId;
-    private final Instant createdAt;
-    private final GameMode gameMode;
+    private Instant createdAt;
+    private GameMode gameMode;
     private Instant lastActivityAt;
 
     public Game(User player1, GameMode gameMode) {
@@ -78,7 +84,7 @@ public class Game {
         this.lastActivityAt = Instant.now();
     }
 
-    public synchronized void placeShips(UUID playerId, List<Ship> ships) {
+    public void placeShips(UUID playerId, List<Ship> ships) {
         if (this.status != GameStatus.PLACING_SHIPS) {
             throw new MatchStatusException("Partida não está na fase de posicionamento");
         }
@@ -98,7 +104,7 @@ public class Game {
         this.lastActivityAt = Instant.now();
     }
 
-    public synchronized Shot shoot(UUID shooterId, Position position, String attackType) {
+    public Shot shoot(UUID shooterId, Position position, String attackType) {
         if (this.status != GameStatus.IN_PROGRESS) {
             throw new MatchStatusException("Partida não está em andamento");
         }
@@ -157,7 +163,7 @@ public class Game {
      * - RADAR: consome o turno (equivale ao ataque daquele turno)
      * - EMP_NAVAL: consome o turno (equivale ao ataque daquele turno)
      */
-    public synchronized List<Position> useAbility(UUID playerId, AbilityType ability, Position target) {
+    public List<Position> useAbility(UUID playerId, AbilityType ability, Position target) {
         if (this.status != GameStatus.IN_PROGRESS) {
             throw new MatchStatusException("Partida não está em andamento");
         }
@@ -214,7 +220,7 @@ public class Game {
         }
     }
 
-    public synchronized void forceSwapTurn() {
+    public void forceSwapTurn() {
         // Decrementa EMP do jogador que deu timeout (timeout conta como turno para EMP)
         if (gameMode == GameMode.TACTICAL) {
             Board currentPlayerBoard = getBoardOf(currentTurn);
@@ -229,7 +235,7 @@ public class Game {
         this.lastActivityAt = Instant.now();
     }
 
-    public synchronized boolean finish(UUID winnerId) {
+    public boolean finish(UUID winnerId) {
         if (this.status == GameStatus.FINISHED) return false;
         this.status = GameStatus.FINISHED;
         this.winnerId = winnerId;
