@@ -11,6 +11,7 @@ services:
     image: prom/prometheus:latest
     command:
       - "--config.file=/etc/prometheus.yml"
+      - "--web.enable-remote-write-receiver"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

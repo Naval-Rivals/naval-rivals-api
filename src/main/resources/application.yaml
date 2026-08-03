@@ -23,7 +23,7 @@ spring:
       port: ${REDIS_PORT}
       password: ${REDIS_PASSWORD}
       ssl:
-        enabled: true
+        enabled: ${REDIS_SSL_ENABLED:false}
 
 api:
   security:
