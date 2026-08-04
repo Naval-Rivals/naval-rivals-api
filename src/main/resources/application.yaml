@@ -17,6 +17,8 @@ spring:
     enabled: true
   cache:
     type: redis
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
   data:
     redis:
       host: ${REDIS_HOST}
@@ -48,10 +50,6 @@ server:
       charset: UTF-8
       enabled: true
       force: true
-
-spring:
-  lifecycle:
-    timeout-per-shutdown-phase: 30s
 
 logging:
   level:

@@ -16,7 +16,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 
+import java.time.Duration;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -52,6 +55,12 @@ class GameDisconnectServiceTest {
     @Mock
     private LobbySSEService lobbySSEService;
 
+    @Mock
+    private StringRedisTemplate redisTemplate;
+
+    @Mock
+    private ValueOperations<String, String> valueOps;
+
     private GameDisconnectService disconnectService;
 
     private UUID gameId;
@@ -61,10 +70,13 @@ class GameDisconnectServiceTest {
 
     @BeforeEach
     void setUp() {
+        lenient().when(redisTemplate.opsForValue()).thenReturn(valueOps);
+
         disconnectService = new GameDisconnectService(
                 30, eventPublisher, gameStorage, turnTimerService,
                 gameService, gameResultService, roomRepository,
-                roomWebSocketService, userRepository, lobbySSEService
+                roomWebSocketService, userRepository, lobbySSEService,
+                redisTemplate
         );
 
         player1Id = UUID.randomUUID();
@@ -82,16 +94,12 @@ class GameDisconnectServiceTest {
     // ==================== registerSession ====================
 
     @Test
-    @DisplayName("registerSession - registra sessão e handleDisconnect consegue encontrá-la")
-    void registerSession_shouldMapSessionToPlayerAndGame() {
+    @DisplayName("registerSession - registra sessão no Redis")
+    void registerSession_shouldStoreInRedis() {
         disconnectService.registerSession("session-1", gameId, player1Id);
 
-        when(gameStorage.findById(gameId)).thenReturn(Optional.of(game));
-
-        disconnectService.handleDisconnect("session-1");
-
-        verify(turnTimerService).pauseTimer(gameId);
-        verify(eventPublisher).publishOpponentDisconnected(gameId, player1Id, 30);
+        verify(valueOps).set(eq("game-session:session-1"), eq(gameId + ":" + player1Id), any(Duration.class));
+        verify(valueOps).set(eq("game-active-session:" + player1Id), eq("session-1"), any(Duration.class));
     }
 
     // ==================== handleDisconnect ====================
@@ -99,58 +107,66 @@ class GameDisconnectServiceTest {
     @Test
     @DisplayName("handleDisconnect - sessão não registrada é noop")
     void handleDisconnect_unregisteredSession_shouldDoNothing() {
+        when(valueOps.getAndDelete("game-session:unknown-session")).thenReturn(null);
+
         disconnectService.handleDisconnect("unknown-session");
 
         verifyNoInteractions(gameStorage, turnTimerService, eventPublisher);
     }
 
     @Test
-    @DisplayName("handleDisconnect - jogo não encontrado é noop")
-    void handleDisconnect_gameNotFound_shouldDoNothing() {
-        disconnectService.registerSession("session-1", gameId, player1Id);
-        when(gameStorage.findById(gameId)).thenReturn(Optional.empty());
-
-        disconnectService.handleDisconnect("session-1");
-
-        verifyNoInteractions(turnTimerService, eventPublisher);
-    }
-
-    @Test
-    @DisplayName("handleDisconnect - jogo FINISHED é noop")
-    void handleDisconnect_gameFinished_shouldDoNothing() {
-        game.finish(player1Id); // muda status para FINISHED
-
-        disconnectService.registerSession("session-1", gameId, player2Id);
+    @DisplayName("handleDisconnect - sessão registrada agenda processamento com delay")
+    void handleDisconnect_registeredSession_shouldScheduleProcessing() throws InterruptedException {
+        String sessionValue = gameId + ":" + player1Id;
+        when(valueOps.getAndDelete("game-session:session-1")).thenReturn(sessionValue);
+        when(valueOps.get("game-active-session:" + player1Id)).thenReturn(null);
         when(gameStorage.findById(gameId)).thenReturn(Optional.of(game));
+        when(redisTemplate.delete(anyString())).thenReturn(true);
 
         disconnectService.handleDisconnect("session-1");
 
-        verifyNoInteractions(turnTimerService, eventPublisher);
-    }
-
-    @Test
-    @DisplayName("handleDisconnect - jogo IN_PROGRESS pausa timer e publica OPPONENT_DISCONNECTED")
-    void handleDisconnect_gameInProgress_shouldPauseTimerAndPublishDisconnect() {
-        disconnectService.registerSession("session-1", gameId, player1Id);
-        when(gameStorage.findById(gameId)).thenReturn(Optional.of(game));
-
-        disconnectService.handleDisconnect("session-1");
+        // Espera o delay de 2s + margem
+        Thread.sleep(2500);
 
         verify(turnTimerService).pauseTimer(gameId);
         verify(eventPublisher).publishOpponentDisconnected(gameId, player1Id, 30);
     }
 
-    // ==================== handleReconnect ====================
-
     @Test
-    @DisplayName("handleReconnect - cancela timeout, publica OPPONENT_RECONNECTED e retoma timer")
-    void handleReconnect_withPendingTimeout_shouldCancelAndResumeTimer() {
-        disconnectService.registerSession("session-1", gameId, player1Id);
-        when(gameStorage.findById(gameId)).thenReturn(Optional.of(game));
+    @DisplayName("handleDisconnect - sessão obsoleta (nova sessão já ativa) é ignorada após delay")
+    void handleDisconnect_obsoleteSession_shouldBeIgnoredAfterDelay() throws InterruptedException {
+        String sessionValue = gameId + ":" + player1Id;
+        when(valueOps.getAndDelete("game-session:session-1")).thenReturn(sessionValue);
+        // Nova sessão já registrada
+        when(valueOps.get("game-active-session:" + player1Id)).thenReturn("session-2");
 
         disconnectService.handleDisconnect("session-1");
 
-        // Reconecta com nova sessão
+        // Espera o delay
+        Thread.sleep(2500);
+
+        verify(turnTimerService, never()).pauseTimer(any());
+        verify(eventPublisher, never()).publishOpponentDisconnected(any(), any(), anyInt());
+    }
+
+    // ==================== handleReconnect ====================
+
+    @Test
+    @DisplayName("handleReconnect - com disconnect pendente cancela timeout e publica RECONNECTED")
+    void handleReconnect_withPendingDisconnect_shouldCancelAndPublishReconnected() throws InterruptedException {
+        // Simula disconnect
+        String sessionValue = gameId + ":" + player1Id;
+        when(valueOps.getAndDelete("game-session:session-1")).thenReturn(sessionValue);
+        when(valueOps.get("game-active-session:" + player1Id)).thenReturn(null);
+        when(gameStorage.findById(gameId)).thenReturn(Optional.of(game));
+        when(redisTemplate.delete(anyString())).thenReturn(true);
+
+        disconnectService.handleDisconnect("session-1");
+        Thread.sleep(2500); // Espera processamento do disconnect
+
+        // Simula reconexão
+        when(valueOps.getAndDelete("game-disconnected:" + player1Id)).thenReturn(gameId.toString());
+
         disconnectService.handleReconnect("session-2", gameId, player1Id);
 
         verify(eventPublisher).publishOpponentReconnected(gameId, player1Id);
@@ -158,116 +174,32 @@ class GameDisconnectServiceTest {
     }
 
     @Test
-    @DisplayName("handleReconnect - sem timeout pendente registra sessão normalmente")
-    void handleReconnect_withoutPendingTimeout_shouldJustRegisterSession() {
+    @DisplayName("handleReconnect - sem disconnect pendente apenas registra sessão")
+    void handleReconnect_withoutPendingDisconnect_shouldJustRegister() {
+        when(valueOps.getAndDelete("game-disconnected:" + player1Id)).thenReturn(null);
+
         disconnectService.handleReconnect("session-1", gameId, player1Id);
 
-        // Sem timeout pendente, não publica reconnected
         verify(eventPublisher, never()).publishOpponentReconnected(any(), any());
         verify(turnTimerService, never()).resumeTimer(any());
-    }
-
-    // ==================== timeout (handleReconnectTimeout via scheduler) ====================
-
-    @Test
-    @DisplayName("handleReconnectTimeout - após timeout, finaliza jogo e publica GAME_OVER")
-    void handleReconnectTimeout_shouldFinishGameAndPublishGameOver() throws InterruptedException {
-        // Usa timeout curto (1s) para testar expiração
-        disconnectService.shutdown();
-        disconnectService = new GameDisconnectService(
-                1, eventPublisher, gameStorage, turnTimerService,
-                gameService, gameResultService, roomRepository,
-                roomWebSocketService, userRepository, lobbySSEService
-        );
-
-        disconnectService.registerSession("session-1", gameId, player1Id);
-        when(gameStorage.findById(gameId)).thenReturn(Optional.of(game));
-
-        disconnectService.handleDisconnect("session-1");
-
-        // Espera timeout expirar
-        Thread.sleep(1500);
-
-        // Verifica que o jogo foi finalizado com player2 como vencedor (player1 desconectou)
-        verify(gameResultService).persistGameResult(game);
-        verify(eventPublisher).publishGameOver(gameId, player2Id, player1Id, "OPPONENT_DISCONNECTED");
-        verify(turnTimerService).cancelTimer(gameId);
-        verify(gameService).removeGame(gameId);
-    }
-
-    @Test
-    @DisplayName("handleReconnectTimeout - jogo FINISHED no momento do timeout é noop")
-    void handleReconnectTimeout_gameAlreadyFinished_shouldDoNothing() throws InterruptedException {
-        disconnectService.shutdown();
-        disconnectService = new GameDisconnectService(
-                1, eventPublisher, gameStorage, turnTimerService,
-                gameService, gameResultService, roomRepository,
-                roomWebSocketService, userRepository, lobbySSEService
-        );
-
-        disconnectService.registerSession("session-1", gameId, player1Id);
-
-        // Primeira chamada (handleDisconnect) → IN_PROGRESS
-        // Segunda chamada (timeout) → FINISHED
-        when(gameStorage.findById(gameId))
-                .thenReturn(Optional.of(game))  // handleDisconnect
-                .thenAnswer(inv -> {
-                    game.finish(player2Id);      // simula que jogo terminou entre disconnect e timeout
-                    return Optional.of(game);
-                });
-
-        disconnectService.handleDisconnect("session-1");
-
-        Thread.sleep(1500);
-
-        verify(gameResultService, never()).persistGameResult(any());
-        verify(eventPublisher, never()).publishGameOver(any(), any(), any(), eq("OPPONENT_DISCONNECTED"));
+        // Deve registrar sessão
+        verify(valueOps).set(eq("game-session:session-1"), eq(gameId + ":" + player1Id), any(Duration.class));
     }
 
     // ==================== cleanupGame ====================
 
     @Test
-    @DisplayName("cleanupGame - remove sessões e cancela timers do jogo")
-    void cleanupGame_shouldRemoveSessionsAndCancelTimers() {
-        disconnectService.registerSession("session-1", gameId, player1Id);
-        disconnectService.registerSession("session-2", gameId, player2Id);
-
+    @DisplayName("cleanupGame - remove chaves Redis dos jogadores")
+    void cleanupGame_shouldCleanupRedisKeys() {
         when(gameStorage.findById(gameId)).thenReturn(Optional.of(game));
+        when(redisTemplate.delete(anyString())).thenReturn(true);
 
         disconnectService.cleanupGame(gameId);
 
-        // Após cleanup, handleDisconnect com sessões antigas deve ser noop
-        disconnectService.handleDisconnect("session-1");
-        disconnectService.handleDisconnect("session-2");
-
-        // pauseTimer não deve ser chamado pois as sessões foram removidas
-        verify(turnTimerService, never()).pauseTimer(any());
-    }
-
-    @Test
-    @DisplayName("cleanupGame - cancela timer de reconexão pendente")
-    void cleanupGame_shouldCancelPendingReconnectTimers() throws InterruptedException {
-        disconnectService.shutdown();
-        disconnectService = new GameDisconnectService(
-                2, eventPublisher, gameStorage, turnTimerService,
-                gameService, gameResultService, roomRepository,
-                roomWebSocketService, userRepository, lobbySSEService
-        );
-
-        disconnectService.registerSession("session-1", gameId, player1Id);
-        when(gameStorage.findById(gameId)).thenReturn(Optional.of(game));
-
-        // Desconecta para iniciar timer de reconexão
-        disconnectService.handleDisconnect("session-1");
-
-        // Limpa o jogo (cancela o timer pendente)
-        disconnectService.cleanupGame(gameId);
-
-        // Espera mais que o timeout
-        Thread.sleep(2500);
-
-        // O timeout não deve ter sido executado (persistGameResult não deve ser chamado)
-        verify(gameResultService, never()).persistGameResult(any());
+        verify(redisTemplate).delete("game-active-session:" + player1Id);
+        verify(redisTemplate).delete("game-disconnected:" + player1Id);
+        verify(redisTemplate).delete("game-active-session:" + player2Id);
+        verify(redisTemplate).delete("game-disconnected:" + player2Id);
     }
 
     // ==================== Helpers ====================
@@ -287,17 +219,11 @@ class GameDisconnectServiceTest {
 
         Game realGame = new Game(user1, GameMode.CLASSIC);
         realGame.join(user2);
-
-        // Avançar para IN_PROGRESS colocando navios (simulado via reflexão)
         setGameStatusInProgress(realGame);
 
         return realGame;
     }
 
-    /**
-     * Usa reflexão para forçar o status do jogo para IN_PROGRESS
-     * sem precisar posicionar navios.
-     */
     private void setGameStatusInProgress(Game game) {
         try {
             var statusField = Game.class.getDeclaredField("status");

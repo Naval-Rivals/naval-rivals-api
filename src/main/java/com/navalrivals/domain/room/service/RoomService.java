@@ -139,14 +139,19 @@ public class RoomService {
     /**
      * Registra notificação do lobby para ser enviada APÓS o commit da transação.
      * Garante que o frontend, ao receber o evento e fazer GET, já veja os dados atualizados.
+     * Se não houver transação ativa (ex: testes), notifica imediatamente.
      */
     private void notifyLobbyAfterCommit() {
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                lobbySSEService.notifyLobbyUpdated();
-            }
-        });
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    lobbySSEService.notifyLobbyUpdated();
+                }
+            });
+        } else {
+            lobbySSEService.notifyLobbyUpdated();
+        }
     }
 
     public List<RoomResponse> listWaitingRooms() {

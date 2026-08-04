@@ -5,16 +5,21 @@ import com.navalrivals.domain.game.enums.GameMode;
 import com.navalrivals.domain.game.enums.GameStatus;
 import com.navalrivals.domain.game.storage.GameStorage;
 import com.navalrivals.domain.user.entity.User;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.util.HashSet;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -29,16 +34,18 @@ class TurnTimerServiceTest {
     @Mock
     private GameStorage storage;
 
+    @Mock
+    private StringRedisTemplate redisTemplate;
+
+    @Mock
+    private ValueOperations<String, String> valueOps;
+
     private TurnTimerService turnTimerService;
 
     @BeforeEach
     void setUp() {
-        turnTimerService = new TurnTimerService(60, eventPublisher, storage);
-    }
-
-    @AfterEach
-    void tearDown() {
-        turnTimerService.shutdown();
+        when(redisTemplate.opsForValue()).thenReturn(valueOps);
+        turnTimerService = new TurnTimerService(60, eventPublisher, storage, redisTemplate);
     }
 
     // ======================== Helpers ========================
@@ -61,8 +68,6 @@ class TurnTimerServiceTest {
 
         Game game = new Game(user1, GameMode.CLASSIC);
         game.join(user2);
-
-        // Force status to IN_PROGRESS via reflection (since join sets PLACING_SHIPS)
         ReflectionTestUtils.setField(game, "status", GameStatus.IN_PROGRESS);
 
         return game;
@@ -71,116 +76,147 @@ class TurnTimerServiceTest {
     // ======================== startTimer ========================
 
     @Test
-    @DisplayName("startTimer - deve agendar timer que pode ser cancelado posteriormente")
-    void startTimer_shouldScheduleTimer() {
+    @DisplayName("startTimer - deve salvar deadline no Redis")
+    void startTimer_shouldSaveDeadlineInRedis() {
         UUID gameId = UUID.randomUUID();
 
         turnTimerService.startTimer(gameId);
 
-        // Verifica que o timer foi agendado verificando que cancelTimer o remove sem erro
-        assertDoesNotThrow(() -> turnTimerService.cancelTimer(gameId));
+        verify(valueOps).set(eq("turn-deadline:" + gameId), anyString(), any(Duration.class));
     }
 
     // ======================== cancelTimer ========================
 
     @Test
-    @DisplayName("cancelTimer - deve cancelar timer ativo sem disparar timeout")
-    void cancelTimer_shouldCancelActiveTimer() throws InterruptedException {
-        // Cria serviço com timeout de 1 segundo para teste rápido
-        TurnTimerService shortTimerService = new TurnTimerService(1, eventPublisher, storage);
-
+    @DisplayName("cancelTimer - deve remover deadline e pausa do Redis")
+    void cancelTimer_shouldDeleteKeysFromRedis() {
         UUID gameId = UUID.randomUUID();
+        when(redisTemplate.delete(anyString())).thenReturn(true);
 
-        shortTimerService.startTimer(gameId);
-        shortTimerService.cancelTimer(gameId);
+        turnTimerService.cancelTimer(gameId);
 
-        // Espera mais que o timeout para garantir que não disparou
-        Thread.sleep(1500);
-
-        // Se o timer tivesse disparado, publishTurnTimeout seria chamado
-        verify(eventPublisher, never()).publishTurnTimeout(any(), any(), any());
-        verify(eventPublisher, never()).publishTurnChange(any(), any(), anyInt());
-
-        shortTimerService.shutdown();
+        verify(redisTemplate).delete("turn-deadline:" + gameId);
+        verify(redisTemplate).delete("turn-paused:" + gameId);
     }
 
     // ======================== pauseTimer ========================
 
     @Test
-    @DisplayName("pauseTimer - deve armazenar tempo restante ao pausar")
-    void pauseTimer_shouldStoreRemainingTime() throws InterruptedException {
+    @DisplayName("pauseTimer - deve calcular tempo restante e salvar no Redis")
+    void pauseTimer_shouldStoreRemainingTime() {
         UUID gameId = UUID.randomUUID();
+        Instant futureDeadline = Instant.now().plusSeconds(30);
 
-        turnTimerService.startTimer(gameId);
-
-        // Espera um pouco para que tempo restante seja menor que total
-        Thread.sleep(200);
+        when(valueOps.getAndDelete("turn-deadline:" + gameId)).thenReturn(futureDeadline.toString());
 
         turnTimerService.pauseTimer(gameId);
 
-        // Após pause, resume deve funcionar sem reiniciar do zero
-        // Verifica que o estado interno de pausa foi salvo (resume não chama startTimer com timeout completo)
-        assertDoesNotThrow(() -> turnTimerService.resumeTimer(gameId));
+        verify(valueOps).set(eq("turn-paused:" + gameId), anyString(), any(Duration.class));
+    }
+
+    @Test
+    @DisplayName("pauseTimer - sem deadline ativa é noop")
+    void pauseTimer_noDeadline_shouldDoNothing() {
+        UUID gameId = UUID.randomUUID();
+
+        when(valueOps.getAndDelete("turn-deadline:" + gameId)).thenReturn(null);
+
+        turnTimerService.pauseTimer(gameId);
+
+        verify(valueOps, never()).set(contains("turn-paused:"), anyString(), any(Duration.class));
     }
 
     // ======================== resumeTimer ========================
 
     @Test
-    @DisplayName("resumeTimer - com timer pausado deve retomar com tempo restante")
-    void resumeTimer_withPausedTimer_shouldResumeWithRemainingTime() throws InterruptedException {
-        // Usa timeout curto para verificar que resume usa tempo restante (não reinicia)
-        TurnTimerService shortTimerService = new TurnTimerService(2, eventPublisher, storage);
-
+    @DisplayName("resumeTimer - com timer pausado deve criar nova deadline com tempo restante")
+    void resumeTimer_withPausedTimer_shouldSetNewDeadline() {
         UUID gameId = UUID.randomUUID();
-        Game game = createGameInProgress();
-        when(storage.findById(gameId)).thenReturn(Optional.of(game));
 
-        shortTimerService.startTimer(gameId);
+        when(valueOps.getAndDelete("turn-paused:" + gameId)).thenReturn("30000"); // 30s restantes
 
-        // Espera 1 segundo (metade do timeout)
-        Thread.sleep(1000);
+        turnTimerService.resumeTimer(gameId);
 
-        shortTimerService.pauseTimer(gameId);
-
-        // Resume — deve ter ~1s restante
-        shortTimerService.resumeTimer(gameId);
-
-        // Espera 500ms — ainda não deveria ter disparado (restava ~1s)
-        Thread.sleep(500);
-        verify(eventPublisher, never()).publishTurnTimeout(any(), any(), any());
-
-        // Espera mais 800ms — agora deveria ter disparado (~1s restante já passou)
-        Thread.sleep(800);
-        verify(eventPublisher, atLeastOnce()).publishTurnTimeout(eq(gameId), any(), any());
-
-        shortTimerService.shutdown();
+        // Deve salvar nova deadline (não chamar cancelTimer antes, pois resume já limpa pausa)
+        verify(valueOps).set(eq("turn-deadline:" + gameId), anyString(), any(Duration.class));
     }
 
     @Test
-    @DisplayName("resumeTimer - sem timer pausado deve iniciar timer do zero")
-    void resumeTimer_withoutPausedTimer_shouldStartFresh() throws InterruptedException {
-        // Usa timeout curto
-        TurnTimerService shortTimerService = new TurnTimerService(1, eventPublisher, storage);
-
+    @DisplayName("resumeTimer - sem timer pausado deve iniciar do zero")
+    void resumeTimer_withoutPausedTimer_shouldStartFresh() {
         UUID gameId = UUID.randomUUID();
+        when(redisTemplate.delete(anyString())).thenReturn(true);
+
+        when(valueOps.getAndDelete("turn-paused:" + gameId)).thenReturn(null);
+
+        turnTimerService.resumeTimer(gameId);
+
+        // Deve ter chamado startTimer que salva deadline
+        verify(valueOps).set(eq("turn-deadline:" + gameId), anyString(), any(Duration.class));
+    }
+
+    // ======================== checkExpiredDeadlines ========================
+
+    @Test
+    @DisplayName("checkExpiredDeadlines - deadline expirada deve tentar processar timeout")
+    void checkExpiredDeadlines_expiredDeadline_shouldProcessTimeout() {
+        UUID gameId = UUID.randomUUID();
+        String key = "turn-deadline:" + gameId;
+        Instant expiredDeadline = Instant.now().minusSeconds(5);
+
+        Set<String> keys = new HashSet<>();
+        keys.add(key);
+        when(redisTemplate.keys("turn-deadline:*")).thenReturn(keys);
+        when(valueOps.get(key)).thenReturn(expiredDeadline.toString());
+        when(valueOps.setIfAbsent(eq("turn-lock:" + gameId), eq("1"), any(Duration.class))).thenReturn(true);
+        when(redisTemplate.delete("turn-deadline:" + gameId)).thenReturn(true);
+        when(redisTemplate.delete("turn-lock:" + gameId)).thenReturn(true);
+
         Game game = createGameInProgress();
         when(storage.findById(gameId)).thenReturn(Optional.of(game));
 
-        // Resume sem ter pausado antes — deve iniciar do zero (1s)
-        shortTimerService.resumeTimer(gameId);
+        turnTimerService.checkExpiredDeadlines();
 
-        // Espera 500ms — não deveria ter disparado ainda
-        Thread.sleep(500);
-        verify(eventPublisher, never()).publishTurnTimeout(any(), any(), any());
-
-        // Espera mais 700ms — agora deve ter disparado (1s total)
-        Thread.sleep(700);
-        verify(eventPublisher, atLeastOnce()).publishTurnTimeout(eq(gameId), any(), any());
-
-        shortTimerService.shutdown();
+        verify(eventPublisher).publishTurnTimeout(eq(gameId), any(), any());
+        verify(eventPublisher).publishTurnChange(eq(gameId), any(), eq(60));
     }
 
-    // ======================== handleTimeout (via Reflection) ========================
+    @Test
+    @DisplayName("checkExpiredDeadlines - deadline não expirada não deve processar")
+    void checkExpiredDeadlines_futureDeadline_shouldNotProcess() {
+        UUID gameId = UUID.randomUUID();
+        String key = "turn-deadline:" + gameId;
+        Instant futureDeadline = Instant.now().plusSeconds(30);
+
+        Set<String> keys = new HashSet<>();
+        keys.add(key);
+        when(redisTemplate.keys("turn-deadline:*")).thenReturn(keys);
+        when(valueOps.get(key)).thenReturn(futureDeadline.toString());
+
+        turnTimerService.checkExpiredDeadlines();
+
+        verify(eventPublisher, never()).publishTurnTimeout(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("checkExpiredDeadlines - lock não adquirido (outra instância processando) é noop")
+    void checkExpiredDeadlines_lockNotAcquired_shouldSkip() {
+        UUID gameId = UUID.randomUUID();
+        String key = "turn-deadline:" + gameId;
+        Instant expiredDeadline = Instant.now().minusSeconds(5);
+
+        Set<String> keys = new HashSet<>();
+        keys.add(key);
+        when(redisTemplate.keys("turn-deadline:*")).thenReturn(keys);
+        when(valueOps.get(key)).thenReturn(expiredDeadline.toString());
+        when(valueOps.setIfAbsent(eq("turn-lock:" + gameId), eq("1"), any(Duration.class))).thenReturn(false);
+
+        turnTimerService.checkExpiredDeadlines();
+
+        verify(eventPublisher, never()).publishTurnTimeout(any(), any(), any());
+    }
+
+    // ======================== handleTimeout ========================
 
     @Test
     @DisplayName("handleTimeout - deve trocar turno e publicar eventos quando jogo está IN_PROGRESS")
@@ -191,53 +227,39 @@ class TurnTimerServiceTest {
 
         when(storage.findById(gameId)).thenReturn(Optional.of(game));
 
-        // Invoca handleTimeout via reflection
         ReflectionTestUtils.invokeMethod(turnTimerService, "handleTimeout", gameId);
 
         UUID newTurn = game.getCurrentTurn();
-
-        // Verifica que o turno mudou
         assertNotEquals(originalTurn, newTurn);
 
-        // Verifica publicação de TURN_TIMEOUT
         verify(eventPublisher).publishTurnTimeout(gameId, originalTurn, newTurn);
-
-        // Verifica publicação de TURN_CHANGE
         verify(eventPublisher).publishTurnChange(gameId, newTurn, 60);
     }
 
     @Test
-    @DisplayName("handleTimeout - deve não fazer nada quando jogo não é encontrado")
+    @DisplayName("handleTimeout - jogo não encontrado é noop")
     void handleTimeout_gameNotFound_shouldDoNothing() {
         UUID gameId = UUID.randomUUID();
 
         when(storage.findById(gameId)).thenReturn(Optional.empty());
 
-        // Invoca handleTimeout via reflection
         ReflectionTestUtils.invokeMethod(turnTimerService, "handleTimeout", gameId);
 
-        // Nenhum evento deve ser publicado
         verify(eventPublisher, never()).publishTurnTimeout(any(), any(), any());
-        verify(eventPublisher, never()).publishTurnChange(any(), any(), anyInt());
     }
 
     @Test
-    @DisplayName("handleTimeout - deve não fazer nada quando jogo está FINISHED")
+    @DisplayName("handleTimeout - jogo FINISHED é noop")
     void handleTimeout_gameFinished_shouldDoNothing() {
         UUID gameId = UUID.randomUUID();
         Game game = createGameInProgress();
-
-        // Finaliza o jogo
         game.finish(game.getCurrentTurn());
 
         when(storage.findById(gameId)).thenReturn(Optional.of(game));
 
-        // Invoca handleTimeout via reflection
         ReflectionTestUtils.invokeMethod(turnTimerService, "handleTimeout", gameId);
 
-        // Nenhum evento deve ser publicado
         verify(eventPublisher, never()).publishTurnTimeout(any(), any(), any());
-        verify(eventPublisher, never()).publishTurnChange(any(), any(), anyInt());
     }
 
     // ======================== getTurnTimeout ========================

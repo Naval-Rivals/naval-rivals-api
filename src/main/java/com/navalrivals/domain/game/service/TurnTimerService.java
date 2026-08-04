@@ -4,107 +4,95 @@ import com.navalrivals.domain.game.entity.Game;
 import com.navalrivals.domain.game.enums.GameStatus;
 import com.navalrivals.domain.game.storage.GameStorage;
 import lombok.extern.slf4j.Slf4j;
-import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-import java.util.Map;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.*;
 
 /**
- * Gerencia o timer de turno para cada partida.
+ * Gerencia o timer de turno para cada partida usando Redis como state store.
  *
- * Abordagem "fire-once":
- * - Agenda UMA ÚNICA task para disparar após TURN_TIMEOUT_SECONDS
- * - Se o jogador atacar antes do timeout, cancela e reage
- * - Zero mensagens intermediárias (nada de TIMER_TICK)
- * - Frontend faz o countdown visual localmente ao receber TURN_CHANGE
+ * Abordagem distribuída:
+ * - Ao iniciar um timer, salva uma chave "turn-deadline:{gameId}" com o timestamp de expiração.
+ * - Um scheduler periódico (1s) verifica deadlines expiradas e processa timeouts.
+ * - Usa distributed lock (SETNX) para garantir que apenas UMA instância processa cada timeout.
+ * - Pausar/resumir atualiza a deadline no Redis.
  *
- * Isso escala para milhares de jogos com carga mínima no servidor.
+ * Isso funciona com múltiplas instâncias sem duplicação de processamento.
  */
 @Slf4j
 @Service
 public class TurnTimerService {
 
+    private static final String DEADLINE_KEY_PREFIX = "turn-deadline:";
+    private static final String PAUSED_KEY_PREFIX = "turn-paused:";
+    private static final String LOCK_KEY_PREFIX = "turn-lock:";
+    private static final Duration LOCK_TTL = Duration.ofSeconds(5);
+    private static final Duration DEADLINE_TTL = Duration.ofMinutes(5); // Safety TTL
+
     private final int turnTimeoutSeconds;
     private final GameEventPublisher eventPublisher;
     private final GameStorage storage;
+    private final StringRedisTemplate redisTemplate;
 
     public TurnTimerService(
             @Value("${game.turn-timeout-seconds}") int turnTimeoutSeconds,
             GameEventPublisher eventPublisher,
-            GameStorage storage
+            GameStorage storage,
+            StringRedisTemplate redisTemplate
     ) {
         this.turnTimeoutSeconds = turnTimeoutSeconds;
         this.eventPublisher = eventPublisher;
         this.storage = storage;
+        this.redisTemplate = redisTemplate;
     }
 
     /**
-     * Armazena o ScheduledFuture de cada jogo para poder cancelar.
-     */
-    private final Map<UUID, ScheduledFuture<?>> activeTimers = new ConcurrentHashMap<>();
-
-    /**
-     * Armazena os segundos restantes no momento da pausa (para reconexão).
-     */
-    private final Map<UUID, Long> pausedRemainingMs = new ConcurrentHashMap<>();
-
-    /**
-     * Armazena o instante em que o timer foi iniciado (para calcular restante na pausa).
-     */
-    private final Map<UUID, Long> timerStartedAt = new ConcurrentHashMap<>();
-
-    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
-
-    /**
      * Inicia (ou reinicia) o timer de turno para uma partida.
-     * Agenda uma ÚNICA task que dispara após 60 segundos.
-     *
-     * Chamado quando:
-     * - O jogo começa (GAME_STARTED)
-     * - Um ataque é feito (turno mudou)
-     * - Um timeout acontece (turno passou automaticamente)
-     * - Reconexão retoma o timer
+     * Salva o deadline (now + turnTimeout) no Redis.
      */
     public void startTimer(UUID gameId) {
-        cancelTimer(gameId);
-        scheduleTimeout(gameId, turnTimeoutSeconds * 1000L);
+        cancelTimer(gameId); // Remove pausa se existir
+        Instant deadline = Instant.now().plusSeconds(turnTimeoutSeconds);
+        redisTemplate.opsForValue().set(
+                DEADLINE_KEY_PREFIX + gameId,
+                deadline.toString(),
+                DEADLINE_TTL
+        );
+        log.debug("[TIMER] Timer iniciado — gameId={}, deadline={}", gameId, deadline);
     }
 
     /**
      * Cancela o timer de uma partida completamente.
-     * Chamado quando:
-     * - O jogador ataca (antes de startTimer para o novo turno)
-     * - O jogo termina (GAME_OVER)
      */
     public void cancelTimer(UUID gameId) {
-        ScheduledFuture<?> future = activeTimers.remove(gameId);
-        if (future != null) {
-            future.cancel(false);
-        }
-        pausedRemainingMs.remove(gameId);
-        timerStartedAt.remove(gameId);
+        redisTemplate.delete(DEADLINE_KEY_PREFIX + gameId);
+        redisTemplate.delete(PAUSED_KEY_PREFIX + gameId);
+        log.debug("[TIMER] Timer cancelado — gameId={}", gameId);
     }
 
     /**
      * Pausa o timer (desconexão de jogador).
-     * Calcula quanto tempo restava e armazena para retomar depois.
+     * Calcula quanto tempo restava e armazena.
      */
     public void pauseTimer(UUID gameId) {
-        ScheduledFuture<?> future = activeTimers.remove(gameId);
-        if (future != null) {
-            future.cancel(false);
-        }
+        String deadlineStr = redisTemplate.opsForValue().getAndDelete(DEADLINE_KEY_PREFIX + gameId);
+        if (deadlineStr == null) return;
 
-        Long startedAt = timerStartedAt.remove(gameId);
-        if (startedAt != null) {
-            long elapsed = System.currentTimeMillis() - startedAt;
-            long remaining = (turnTimeoutSeconds * 1000L) - elapsed;
-            if (remaining > 0) {
-                pausedRemainingMs.put(gameId, remaining);
-            }
+        Instant deadline = Instant.parse(deadlineStr);
+        long remainingMs = Duration.between(Instant.now(), deadline).toMillis();
+        if (remainingMs > 0) {
+            redisTemplate.opsForValue().set(
+                    PAUSED_KEY_PREFIX + gameId,
+                    String.valueOf(remainingMs),
+                    DEADLINE_TTL
+            );
+            log.debug("[TIMER] Timer pausado — gameId={}, remainingMs={}", gameId, remainingMs);
         }
     }
 
@@ -112,30 +100,80 @@ public class TurnTimerService {
      * Retoma o timer após reconexão, usando os milissegundos que restavam.
      */
     public void resumeTimer(UUID gameId) {
-        Long remainingMs = pausedRemainingMs.remove(gameId);
-        if (remainingMs == null || remainingMs <= 0) {
-            // Não havia timer pausado ou já expirou — reinicia do zero
+        String remainingStr = redisTemplate.opsForValue().getAndDelete(PAUSED_KEY_PREFIX + gameId);
+        if (remainingStr == null) {
+            // Não havia timer pausado — reinicia do zero
             startTimer(gameId);
             return;
         }
-        scheduleTimeout(gameId, remainingMs);
+
+        long remainingMs = Long.parseLong(remainingStr);
+        if (remainingMs <= 0) {
+            startTimer(gameId);
+            return;
+        }
+
+        Instant deadline = Instant.now().plusMillis(remainingMs);
+        redisTemplate.opsForValue().set(
+                DEADLINE_KEY_PREFIX + gameId,
+                deadline.toString(),
+                DEADLINE_TTL
+        );
+        log.debug("[TIMER] Timer retomado — gameId={}, remainingMs={}, deadline={}", gameId, remainingMs, deadline);
     }
 
     /**
-     * Agenda a task de timeout.
+     * Scheduler que verifica deadlines expiradas a cada 1 segundo.
+     * Usa distributed lock para garantir que apenas uma instância processa cada timeout.
      */
-    private void scheduleTimeout(UUID gameId, long delayMs) {
-        timerStartedAt.put(gameId, System.currentTimeMillis());
+    @Scheduled(fixedRate = 1000)
+    public void checkExpiredDeadlines() {
+        Set<String> keys = redisTemplate.keys(DEADLINE_KEY_PREFIX + "*");
+        if (keys == null || keys.isEmpty()) return;
 
-        ScheduledFuture<?> future = scheduler.schedule(() -> {
+        Instant now = Instant.now();
+
+        for (String key : keys) {
+            String deadlineStr = redisTemplate.opsForValue().get(key);
+            if (deadlineStr == null) continue;
+
             try {
-                handleTimeout(gameId);
+                Instant deadline = Instant.parse(deadlineStr);
+                if (now.isAfter(deadline)) {
+                    // Deadline expirada — tentar adquirir lock para processar
+                    String gameIdStr = key.replace(DEADLINE_KEY_PREFIX, "");
+                    UUID gameId = UUID.fromString(gameIdStr);
+                    processTimeoutWithLock(gameId);
+                }
             } catch (Exception e) {
-                log.error("Erro no timeout do jogo {}: {}", gameId, e.getMessage());
+                log.warn("[TIMER] Erro ao processar deadline key={}: {}", key, e.getMessage());
+                // Remove chave inválida
+                redisTemplate.delete(key);
             }
-        }, delayMs, TimeUnit.MILLISECONDS);
+        }
+    }
 
-        activeTimers.put(gameId, future);
+    /**
+     * Tenta adquirir lock e processar o timeout.
+     * Se outra instância já pegou o lock, ignora silenciosamente.
+     */
+    private void processTimeoutWithLock(UUID gameId) {
+        String lockKey = LOCK_KEY_PREFIX + gameId;
+
+        // SETNX com TTL — só uma instância ganha
+        Boolean acquired = redisTemplate.opsForValue().setIfAbsent(lockKey, "1", LOCK_TTL);
+        if (!Boolean.TRUE.equals(acquired)) {
+            return; // Outra instância já está processando
+        }
+
+        try {
+            // Remove a deadline para evitar reprocessamento
+            redisTemplate.delete(DEADLINE_KEY_PREFIX + gameId);
+
+            handleTimeout(gameId);
+        } finally {
+            redisTemplate.delete(lockKey);
+        }
     }
 
     /**
@@ -143,9 +181,6 @@ public class TurnTimerService {
      * Busca o jogo, passa o turno, publica TURN_TIMEOUT + TURN_CHANGE, reinicia timer.
      */
     private void handleTimeout(UUID gameId) {
-        timerStartedAt.remove(gameId);
-        activeTimers.remove(gameId);
-
         var gameOpt = storage.findById(gameId);
         if (gameOpt.isEmpty()) return;
 
@@ -166,14 +201,11 @@ public class TurnTimerService {
 
         // Reinicia timer para o novo turno
         startTimer(gameId);
+
+        log.debug("[TIMER] Timeout processado — gameId={}, timedOutPlayer={}, nextTurn={}", gameId, timedOutPlayer, nextTurn);
     }
 
     public int getTurnTimeout() {
         return turnTimeoutSeconds;
-    }
-
-    @PreDestroy
-    public void shutdown() {
-        scheduler.shutdownNow();
     }
 }
