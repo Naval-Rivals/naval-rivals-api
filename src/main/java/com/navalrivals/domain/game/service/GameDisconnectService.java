@@ -102,8 +102,8 @@ public class GameDisconnectService {
      * Chamado quando uma sessão WebSocket desconecta (SessionDisconnectEvent).
      * Verifica se é um jogador em partida ativa e inicia o countdown de reconexão.
      *
-     * IMPORTANTE: Se o jogador já reconectou com uma nova sessão (ex: F5/reload),
-     * o disconnect da sessão antiga é ignorado para evitar race condition.
+     * Usa um pequeno delay (2s) antes de processar o disconnect para evitar race conditions
+     * quando o frontend fecha e reconecta rapidamente (navegação entre telas).
      */
     public void handleDisconnect(String sessionId) {
         PlayerSession session = sessionMap.remove(sessionId);
@@ -112,11 +112,22 @@ public class GameDisconnectService {
         UUID gameId = session.gameId();
         UUID playerId = session.playerId();
 
+        // Agenda processamento com delay para dar tempo de uma nova sessão se registrar
+        scheduler.schedule(() -> {
+            processDisconnect(sessionId, gameId, playerId);
+        }, 2, TimeUnit.SECONDS);
+    }
+
+    /**
+     * Processa o disconnect efetivamente após o delay.
+     * Se o jogador já reconectou com nova sessão, ignora.
+     */
+    private void processDisconnect(String sessionId, UUID gameId, UUID playerId) {
         // Se o jogador já tem uma sessão MAIS RECENTE ativa, esse disconnect
-        // é de uma sessão obsoleta (ex: F5 reload) — ignorar.
+        // é de uma sessão obsoleta (ex: navegação entre telas) — ignorar.
         String currentActiveSession = activeSessionByPlayer.get(playerId);
         if (currentActiveSession != null && !currentActiveSession.equals(sessionId)) {
-            log.info("Disconnect de sessão obsoleta ignorado: session={}, player={}, activeSession={}",
+            log.info("Disconnect de sessão obsoleta ignorado (após delay): session={}, player={}, activeSession={}",
                     sessionId, playerId, currentActiveSession);
             return;
         }
@@ -133,7 +144,7 @@ public class GameDisconnectService {
             return;
         }
 
-        log.info("Jogador {} desconectou do jogo {}", playerId, gameId);
+        log.info("Jogador {} desconectou do jogo {} (confirmado após delay)", playerId, gameId);
 
         // Pausa o timer de turno
         turnTimerService.pauseTimer(gameId);

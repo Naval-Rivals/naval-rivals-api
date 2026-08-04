@@ -42,11 +42,16 @@ game:
     interval-ms: 300000
 
 server:
+  shutdown: graceful
   servlet:
     encoding:
       charset: UTF-8
       enabled: true
       force: true
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
 
 logging:
   level:
@@ -78,6 +83,11 @@ management:
     health:
       enabled: true
       show-details: always
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: db, redis
     info:
       enabled: true
     prometheus:

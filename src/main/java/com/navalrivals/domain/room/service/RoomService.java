@@ -16,6 +16,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.security.SecureRandom;
 import java.util.List;
@@ -53,7 +55,7 @@ public class RoomService {
         String code = generateUniqueCode();
         var room = new Room(host, code, gameMode);
         roomRepository.save(room);
-        lobbySSEService.notifyLobbyUpdated();
+        notifyLobbyAfterCommit();
         log.info("[ROOM] Sala criada — roomId={}, code={}, hostId={}, mode={}", room.getId(), code, host.getId(), gameMode);
         return new RoomResponse(room);
     }
@@ -84,7 +86,7 @@ public class RoomService {
 
         roomWebSocketService.notifyPlayerJoined(room.getId(), player.getId(), player.getNickname());
         roomWebSocketService.notifyRoomReady(room.getId(), player.getId(), player.getNickname(), game.getId());
-        lobbySSEService.notifyLobbyUpdated();
+        notifyLobbyAfterCommit();
 
         log.info("[ROOM] Jogador entrou na sala — roomId={}, playerId={}, code={}, gameId={}", room.getId(), player.getId(), room.getCode(), game.getId());
         return new RoomResponse(room);
@@ -131,7 +133,20 @@ public class RoomService {
             }
         }
 
-        lobbySSEService.notifyLobbyUpdated();
+        notifyLobbyAfterCommit();
+    }
+
+    /**
+     * Registra notificação do lobby para ser enviada APÓS o commit da transação.
+     * Garante que o frontend, ao receber o evento e fazer GET, já veja os dados atualizados.
+     */
+    private void notifyLobbyAfterCommit() {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                lobbySSEService.notifyLobbyUpdated();
+            }
+        });
     }
 
     public List<RoomResponse> listWaitingRooms() {

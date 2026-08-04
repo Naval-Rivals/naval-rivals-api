@@ -1,9 +1,9 @@
 package com.navalrivals.domain.room.service;
 
 import com.navalrivals.domain.room.dto.RoomEventMessage;
+import com.navalrivals.infra.cluster.ClusterEventPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.UUID;
@@ -23,7 +23,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class RoomWebSocketService {
 
-    private final SimpMessagingTemplate messagingTemplate;
+    private final ClusterEventPublisher eventPublisher;
 
     /**
      * Publica evento PLAYER_JOINED — chamado quando um jogador entra na sala.
@@ -31,7 +31,7 @@ public class RoomWebSocketService {
     public void notifyPlayerJoined(UUID roomId, UUID userId, String nickname){
         var message = new RoomEventMessage("PLAYER_JOINED", roomId, userId, nickname, null);
         log.info("[WS OUT] /topic/room/{} → PLAYER_JOINED | userId={}, nickname={}", roomId, userId, nickname);
-        messagingTemplate.convertAndSend("/topic/room/" + roomId, message);
+        eventPublisher.publish("/topic/room/" + roomId, message);
     }
 
     /**
@@ -41,7 +41,7 @@ public class RoomWebSocketService {
     public void notifyRoomReady(UUID roomId, UUID userId, String nickname, UUID gameId){
         var message = new RoomEventMessage("ROOM_READY", roomId, userId, nickname, gameId);
         log.info("[WS OUT] /topic/room/{} → ROOM_READY | userId={}, gameId={}", roomId, userId, gameId);
-        messagingTemplate.convertAndSend("/topic/room/" + roomId, message);
+        eventPublisher.publish("/topic/room/" + roomId, message);
     }
 
     /**
@@ -50,7 +50,7 @@ public class RoomWebSocketService {
     public void notifyPlayerLeft(UUID roomId, UUID userId, String nickname){
         var message = new RoomEventMessage("PLAYER_LEFT", roomId, userId, nickname, null);
         log.info("[WS OUT] /topic/room/{} → PLAYER_LEFT | userId={}, nickname={}", roomId, userId, nickname);
-        messagingTemplate.convertAndSend("/topic/room/" + roomId, message);
+        eventPublisher.publish("/topic/room/" + roomId, message);
     }
 
 }

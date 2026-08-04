@@ -8,6 +8,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.Map;
 import java.util.UUID;
@@ -90,7 +92,12 @@ public class RoomSessionService {
 
         // Sala sem game — host desconectou antes de alguém entrar → deleta a sala
         roomRepository.delete(room);
-        lobbySSEService.notifyLobbyUpdated();
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                lobbySSEService.notifyLobbyUpdated();
+            }
+        });
         log.info("Sala {} deletada por desconexão do host (session={})", roomId, sessionId);
     }
 

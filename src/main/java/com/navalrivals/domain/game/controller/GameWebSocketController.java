@@ -17,13 +17,13 @@ import com.navalrivals.domain.position.entity.Position;
 import com.navalrivals.domain.ship.entity.Ship;
 import com.navalrivals.domain.shot.entity.Shot;
 import com.navalrivals.domain.user.entity.User;
+import com.navalrivals.infra.cluster.ClusterEventPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.stereotype.Controller;
 
@@ -39,7 +39,7 @@ public class GameWebSocketController {
 
     private final GameService gameService;
     private final GameResultService gameResultService;
-    private final SimpMessagingTemplate messagingTemplate;
+    private final ClusterEventPublisher clusterEventPublisher;
     private final GameEventPublisher eventPublisher;
     private final TurnTimerService turnTimerService;
     private final GameDisconnectService disconnectService;
@@ -117,7 +117,7 @@ public class GameWebSocketController {
                 gameOver ? null : game.getCurrentTurn(),
                 attackType
         );
-        messagingTemplate.convertAndSend("/topic/game/" + gameId + "/attack", response);
+        clusterEventPublisher.publish("/topic/game/" + gameId + "/attack", response);
 
         if (gameOver) {
             log.info("[GAME] Partida finalizada por ALL_SHIPS_SUNK — gameId={}, winnerId={}", gameId, game.getWinnerId());
@@ -210,7 +210,7 @@ public class GameWebSocketController {
 
             if (!gameService.exists(gameId)) {
                 log.warn("[GAME] Register em game inexistente — gameId={}, playerId={}", gameId, user.getId());
-                messagingTemplate.convertAndSend("/topic/game/" + gameId + "/events",
+                clusterEventPublisher.publish("/topic/game/" + gameId + "/events",
                         (Object) Map.of("event", "GAME_NOT_FOUND", "gameId", gameId.toString(), "reason", "OPPONENT_DISCONNECTED"));
                 return;
             }

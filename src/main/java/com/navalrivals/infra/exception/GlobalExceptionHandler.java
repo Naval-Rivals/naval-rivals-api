@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.context.request.async.AsyncRequestTimeoutException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
@@ -109,6 +110,12 @@ public class GlobalExceptionHandler {
         log.warn("[EXCEPTION] MatchStatusException: {}", e.getMessage());
         var response = new ErrorResponse(e.getMessage(), HttpStatus.CONFLICT.value(), null);
         return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+    }
+
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public void handleAsyncNotUsable(AsyncRequestNotUsableException e) {
+        log.debug("[SSE] Cliente SSE desconectou (comportamento esperado): {}", e.getMessage());
+        // Não tenta responder — a conexão já está morta
     }
 
     @ExceptionHandler(Exception.class)

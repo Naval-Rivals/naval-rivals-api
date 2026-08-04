@@ -2,11 +2,10 @@ package com.navalrivals.domain.game.service;
 
 import com.navalrivals.domain.game.dto.GameEvent;
 import com.navalrivals.domain.game.util.CellConverter;
-import com.navalrivals.domain.position.entity.Position;
 import com.navalrivals.domain.ship.entity.Ship;
+import com.navalrivals.infra.cluster.ClusterEventPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -24,12 +23,12 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class GameEventPublisher {
 
-    private final SimpMessagingTemplate messagingTemplate;
+    private final ClusterEventPublisher eventPublisher;
 
     private void publish(UUID gameId, String event, Map<String, Object> payload) {
         var gameEvent = new GameEvent(event, gameId, payload);
         log.info("[WS OUT] /topic/game/{}/events → {} | payload={}", gameId, event, payload);
-        messagingTemplate.convertAndSend("/topic/game/" + gameId + "/events", gameEvent);
+        eventPublisher.publish("/topic/game/" + gameId + "/events", gameEvent);
     }
 
     /**
@@ -38,7 +37,7 @@ public class GameEventPublisher {
     private void publishToUser(UUID gameId, UUID playerId, String event, Map<String, Object> payload) {
         var gameEvent = new GameEvent(event, gameId, payload);
         log.info("[WS OUT] /user/{}/topic/game/{}/events → {} | payload={}", playerId, gameId, event, payload);
-        messagingTemplate.convertAndSendToUser(
+        eventPublisher.publishToUser(
                 playerId.toString(),
                 "/topic/game/" + gameId + "/events",
                 gameEvent
