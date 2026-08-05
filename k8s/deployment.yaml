@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: navalrivals-api
+  namespace: navalrivals
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: navalrivals-api
+  template:
+    metadata:
+      labels:
+        app: navalrivals-api
+    spec:
+      containers:
+        - name: navalrivals-api
+          image: caiosouza07/navalrivals-api:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: navalrivals-config
+            - secretRef:
+                name: navalrivals-secret
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 15

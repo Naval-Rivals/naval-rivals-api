@@ -5,6 +5,7 @@ networks:
 volumes:
   prometheus_data:
   grafana_data:
+  postgres_data:
 
 services:
   prometheus:
@@ -38,6 +39,19 @@ services:
       - "4318:4318"
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
+    networks:
+      - aw-network
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: naval_rivals_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     networks:
       - aw-network
 
